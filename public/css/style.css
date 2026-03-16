@@ -42,6 +42,31 @@ html, body {
   display: flex;
 }
 
+/* 聊天/观 页面：整屏固定，仅消息区域可上下滑动 */
+#screen-chat.active,
+#screen-observe.active {
+  height: 100vh;
+  min-height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+}
+#screen-chat .chat-header,
+#screen-observe .chat-header,
+#screen-chat .filter-bar,
+#screen-observe .filter-bar,
+#screen-chat .chat-form {
+  flex-shrink: 0;
+}
+#screen-chat #chat-messages,
+#screen-observe #observe-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ---------- 入口：诗句 + 观/改 ---------- */
 #screen-intro {
   align-items: center;
