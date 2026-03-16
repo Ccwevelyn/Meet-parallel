@@ -1,66 +1,17 @@
-const path = require('path');
-const fs = require('fs');
 const express = require('express');
 const { requireAuth } = require('./auth');
 const { getDisplayName } = require('./members');
 const { appendChatMessageToPersona } = require('./personas');
-const { getDataPath, ensureDataDir } = require('./data-path');
+const db = require('./db');
 
 const router = express.Router();
-const MESSAGES_FILE = getDataPath('messages.json');
-
-let messages = [];
-let nextId = 1;
-
-function ensureMessagesDir() {
-  ensureDataDir();
-}
-
-function loadMessages() {
-  try {
-    if (fs.existsSync(MESSAGES_FILE)) {
-      const data = JSON.parse(fs.readFileSync(MESSAGES_FILE, 'utf8'));
-      const list = Array.isArray(data.messages) ? data.messages : [];
-      const maxId = list.length ? Math.max(...list.map(m => m.id || 0)) : 0;
-      messages = list;
-      nextId = maxId + 1;
-    }
-  } catch (e) {
-    console.warn('读取 messages.json 失败', e.message);
-  }
-}
-
-function saveMessages() {
-  try {
-    ensureMessagesDir();
-    fs.writeFileSync(MESSAGES_FILE, JSON.stringify({ messages, nextId, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
-  } catch (e) {
-    console.warn('保存 messages.json 失败', e.message);
-  }
-}
-
-loadMessages();
 
 function withDisplayNames(list) {
   return list.map(m => ({ ...m, memberName: getDisplayName(m.memberId) || m.memberName || '' }));
 }
 
-function getDateStr(isoTime) {
-  if (!isoTime) return '';
-  const d = new Date(isoTime);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return y + '-' + m + '-' + day;
-}
-
 router.get('/dates', (req, res) => {
-  const set = new Set();
-  messages.forEach(m => {
-    const d = getDateStr(m.time);
-    if (d) set.add(d);
-  });
-  const dates = Array.from(set).sort().reverse();
+  const dates = db.messagesGetDates();
   res.json({ dates });
 });
 
@@ -68,14 +19,11 @@ router.get('/', (req, res) => {
   const sinceId = parseInt(req.query.sinceId, 10);
   const date = (req.query.date || '').trim();
   const memberId = (req.query.memberId || '').trim();
-  let list = messages;
-  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) list = list.filter(m => getDateStr(m.time) === date);
-  if (memberId) list = list.filter(m => m.memberId === memberId);
-  if (!date && !memberId && sinceId) list = list.filter(m => m.id > sinceId);
+  const list = db.messagesQuery({ date: date || undefined, memberId: memberId || undefined, sinceId: (date || memberId) ? undefined : (isNaN(sinceId) ? undefined : sinceId) });
   res.json({ messages: withDisplayNames(list) });
 });
 
-// 改模式：发送消息（需登录，以当前身份发送）。始终用成员表的 displayName 作为展示名
+// 改模式：发送消息（需登录，以当前身份发送）
 router.post('/', requireAuth, (req, res) => {
   const { text } = req.body || {};
   if (!text || typeof text !== 'string' || !text.trim()) {
@@ -83,39 +31,35 @@ router.post('/', requireAuth, (req, res) => {
   }
   const displayName = getDisplayName(req.user.memberId) || req.user.displayName || req.user.name;
   const msg = {
-    id: nextId++,
+    id: null,
     memberId: req.user.memberId,
     memberName: displayName,
     text: text.trim().slice(0, 2000),
     time: new Date().toISOString(),
     isHuman: true
   };
-  messages.push(msg);
-  saveMessages();
-  // 真人发言时同步加入该成员的人设样本，供 AI 即时学习语气与习惯
+  msg.id = db.messagesAdd(msg);
   appendChatMessageToPersona(req.user.memberId, msg.text, msg.time);
   res.json({ message: msg });
 });
 
 function addAIMessage(memberId, text) {
   const msg = {
-    id: nextId++,
+    id: null,
     memberId,
     memberName: getDisplayName(memberId) || '未知',
     text,
     time: new Date().toISOString(),
     isHuman: false
   };
-  messages.push(msg);
-  saveMessages();
+  msg.id = db.messagesAdd(msg);
   return msg;
 }
 
 function getRecentMessages(limit = 20) {
-  return messages.slice(-limit);
+  return db.messagesGetRecent(limit);
 }
 
-// 传入 addAIMessage、getRecentMessages 与 getOccupiedMemberIds（已登录成员不代发）
 const { scheduleAISimulation } = require('./ai-simulation');
 const { getOccupiedMemberIds } = require('./presence');
 scheduleAISimulation(addAIMessage, getRecentMessages, getOccupiedMemberIds);

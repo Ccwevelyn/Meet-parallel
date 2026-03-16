@@ -1,0 +1,298 @@
+/**
+ * SQLite 数据库：所有持久数据存于 DATA_DIR/app.db，部署时挂载磁盘即可持久化
+ */
+const Database = require('better-sqlite3');
+const { getDataPath, ensureDataDir } = require('./data-path');
+
+let db = null;
+
+function getDb() {
+  if (db) return db;
+  ensureDataDir();
+  const dbPath = getDataPath('app.db');
+  if (process.env.DATA_DIR) {
+    const path = require('path');
+    const fs = require('fs');
+    const seedPath = path.join(__dirname, '..', 'data', 'app.db');
+    const needSeed = !fs.existsSync(dbPath) || (fs.statSync(dbPath).size === 0);
+    if (needSeed && fs.existsSync(seedPath) && fs.statSync(seedPath).size > 0) {
+      fs.copyFileSync(seedPath, dbPath);
+      console.log('已用仓库内 data/app.db 作为种子，写入持久化目录');
+    }
+  }
+  db = new Database(dbPath);
+  db.pragma('journal_mode = WAL');
+  const d = db;
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id TEXT NOT NULL,
+      member_name TEXT,
+      text TEXT NOT NULL,
+      time TEXT,
+      is_human INTEGER DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS personas (
+      name TEXT PRIMARY KEY,
+      message_count INTEGER DEFAULT 0,
+      sample_messages TEXT,
+      active_hours TEXT,
+      reply_habits TEXT,
+      updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS chat_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sender TEXT NOT NULL,
+      text TEXT NOT NULL,
+      time TEXT
+    );
+    CREATE TABLE IF NOT EXISTS collected_chat (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sender TEXT NOT NULL,
+      text TEXT NOT NULL,
+      time TEXT
+    );
+    CREATE TABLE IF NOT EXISTS profiles (
+      member_id TEXT PRIMARY KEY,
+      bio TEXT,
+      updated_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS passwords (
+      name TEXT PRIMARY KEY,
+      password TEXT NOT NULL
+    );
+  `);
+  migrateFromJsonIfNeeded();
+  return db;
+}
+
+function initDb() {
+  getDb();
+}
+
+function migrateFromJsonIfNeeded() {
+  const fs = require('fs');
+  const d = db;
+  const count = d.prepare('SELECT COUNT(*) AS n FROM messages').get();
+  if (count && count.n === 0) {
+    const msgPath = getDataPath('messages.json');
+    if (fs.existsSync(msgPath)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(msgPath, 'utf8'));
+        const list = Array.isArray(data.messages) ? data.messages : [];
+        const stmt = d.prepare('INSERT INTO messages (member_id, member_name, text, time, is_human) VALUES (?, ?, ?, ?, ?)');
+        const run = d.transaction(() => { for (const m of list) stmt.run(m.memberId || '', m.memberName || '', m.text || '', m.time || null, m.isHuman ? 1 : 0); });
+        run();
+        console.log('已从 messages.json 迁移', list.length, '条消息到数据库');
+      } catch (e) {
+        console.warn('迁移 messages.json 失败', e.message);
+      }
+    }
+  }
+  const personaCount = d.prepare('SELECT COUNT(*) AS n FROM personas').get();
+  if (personaCount && personaCount.n === 0) {
+    const pPath = getDataPath('personas.json');
+    if (fs.existsSync(pPath)) {
+      try {
+        const personas = JSON.parse(fs.readFileSync(pPath, 'utf8'));
+        if (personas && typeof personas === 'object') {
+          const stmt = d.prepare('INSERT OR REPLACE INTO personas (name, message_count, sample_messages, active_hours, reply_habits, updated_at) VALUES (?, ?, ?, ?, ?, ?)');
+          const run = d.transaction(() => {
+            for (const [name, p] of Object.entries(personas)) {
+              stmt.run(name, p.messageCount ?? 0, JSON.stringify(p.sampleMessages || []), JSON.stringify(p.activeHours || []), (p.replyHabits || '').slice(0, 500), p.updatedAt || null);
+            }
+          });
+          run();
+          console.log('已从 personas.json 迁移', Object.keys(personas).length, '个人设到数据库');
+        }
+      } catch (e) {
+        console.warn('迁移 personas.json 失败', e.message);
+      }
+    }
+  }
+}
+
+// ---------- messages ----------
+function messagesGetAll() {
+  const rows = getDb().prepare('SELECT id, member_id AS memberId, member_name AS memberName, text, time, is_human AS isHuman FROM messages ORDER BY id').all();
+  return rows.map(r => ({ ...r, isHuman: !!r.isHuman }));
+}
+
+function messagesAdd(msg) {
+  const id = getDb().prepare(
+    'INSERT INTO messages (member_id, member_name, text, time, is_human) VALUES (?, ?, ?, ?, ?)'
+  ).run(msg.memberId, msg.memberName || '', msg.text, msg.time || null, msg.isHuman ? 1 : 0);
+  return id.lastInsertRowid;
+}
+
+function messagesGetRecent(limit = 20) {
+  const rows = getDb().prepare(
+    'SELECT id, member_id AS memberId, member_name AS memberName, text, time, is_human AS isHuman FROM messages ORDER BY id DESC LIMIT ?'
+  ).all(limit);
+  return rows.reverse().map(r => ({ ...r, isHuman: !!r.isHuman }));
+}
+
+function messagesGetDates() {
+  const rows = getDb().prepare(
+    "SELECT DISTINCT date(time) AS d FROM messages WHERE time IS NOT NULL AND time != '' ORDER BY d DESC"
+  ).all();
+  return rows.map(r => r.d).filter(Boolean);
+}
+
+function messagesQuery(options = {}) {
+  const { date, memberId, sinceId } = options;
+  let sql = 'SELECT id, member_id AS memberId, member_name AS memberName, text, time, is_human AS isHuman FROM messages WHERE 1=1';
+  const params = [];
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    sql += ' AND date(time) = ?';
+    params.push(date);
+  }
+  if (memberId) {
+    sql += ' AND member_id = ?';
+    params.push(memberId);
+  }
+  if (sinceId) {
+    sql += ' AND id > ?';
+    params.push(sinceId);
+  }
+  sql += ' ORDER BY id';
+  const rows = params.length ? getDb().prepare(sql).all(...params) : getDb().prepare(sql).all();
+  return rows.map(r => ({ ...r, isHuman: !!r.isHuman }));
+}
+
+// ---------- personas ----------
+function personasLoadAll() {
+  const rows = getDb().prepare('SELECT name, message_count AS messageCount, sample_messages AS sampleMessages, active_hours AS activeHours, reply_habits AS replyHabits, updated_at AS updatedAt FROM personas').all();
+  const out = {};
+  for (const r of rows) {
+    out[r.name] = {
+      name: r.name,
+      messageCount: r.messageCount || 0,
+      sampleMessages: r.sampleMessages ? JSON.parse(r.sampleMessages) : [],
+      activeHours: r.activeHours ? JSON.parse(r.activeHours) : [],
+      replyHabits: r.replyHabits || '',
+      updatedAt: r.updatedAt || null
+    };
+  }
+  return out;
+}
+
+function personasSaveAll(personas) {
+  const stmt = getDb().prepare(
+    'INSERT OR REPLACE INTO personas (name, message_count, sample_messages, active_hours, reply_habits, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+  );
+  const run = getDb().transaction(() => {
+    for (const [name, p] of Object.entries(personas)) {
+      stmt.run(
+        name,
+        p.messageCount ?? 0,
+        JSON.stringify(p.sampleMessages || []),
+        JSON.stringify(p.activeHours || []),
+        (p.replyHabits || '').slice(0, 500),
+        p.updatedAt || new Date().toISOString()
+      );
+    }
+  });
+  run();
+}
+
+function personasSaveOne(name, p) {
+  getDb().prepare(
+    'INSERT OR REPLACE INTO personas (name, message_count, sample_messages, active_hours, reply_habits, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(
+    name,
+    p.messageCount ?? 0,
+    JSON.stringify(p.sampleMessages || []),
+    JSON.stringify(p.activeHours || []),
+    (p.replyHabits || '').slice(0, 500),
+    p.updatedAt || new Date().toISOString()
+  );
+}
+
+// ---------- chat_history (导入的群聊记录) ----------
+function chatHistoryLoad() {
+  const rows = getDb().prepare('SELECT sender, text, time FROM chat_history ORDER BY id').all();
+  return rows;
+}
+
+function chatHistorySave(messages) {
+  const stmt = getDb().prepare('INSERT INTO chat_history (sender, text, time) VALUES (?, ?, ?)');
+  getDb().exec('DELETE FROM chat_history');
+  const run = getDb().transaction(() => {
+    for (const m of messages) {
+      stmt.run(m.sender || '', m.text || '', m.time || null);
+    }
+  });
+  run();
+}
+
+// ---------- collected_chat ----------
+function collectedChatLoad() {
+  const rows = getDb().prepare('SELECT sender, text, time FROM collected_chat ORDER BY id').all();
+  return rows;
+}
+
+function collectedChatAppend(entry) {
+  getDb().prepare('INSERT INTO collected_chat (sender, text, time) VALUES (?, ?, ?)').run(
+    entry.sender || '',
+    entry.text || '',
+    entry.time || null
+  );
+}
+
+// ---------- profiles ----------
+function profilesLoadAll() {
+  const rows = getDb().prepare('SELECT member_id AS memberId, bio, updated_at AS updatedAt FROM profiles').all();
+  const out = {};
+  for (const r of rows) {
+    out[r.memberId] = { bio: r.bio || '', updatedAt: r.updatedAt };
+  }
+  return out;
+}
+
+function profileGet(memberId) {
+  const row = getDb().prepare('SELECT bio FROM profiles WHERE member_id = ?').get(memberId);
+  return row ? row.bio : '';
+}
+
+function profileSet(memberId, bio) {
+  getDb().prepare('INSERT OR REPLACE INTO profiles (member_id, bio, updated_at) VALUES (?, ?, ?)').run(
+    memberId,
+    (bio || '').slice(0, 2000),
+    new Date().toISOString()
+  );
+}
+
+// ---------- passwords (用户修改的密码覆盖) ----------
+function passwordsLoadAll() {
+  const rows = getDb().prepare('SELECT name, password FROM passwords').all();
+  const out = {};
+  for (const r of rows) out[r.name] = r.password;
+  return out;
+}
+
+function passwordSet(name, password) {
+  getDb().prepare('INSERT OR REPLACE INTO passwords (name, password) VALUES (?, ?)').run(name, (password || '').slice(0, 200));
+}
+
+module.exports = {
+  getDb,
+  initDb,
+  messagesGetAll,
+  messagesAdd,
+  messagesGetRecent,
+  messagesGetDates,
+  messagesQuery,
+  personasLoadAll,
+  personasSaveAll,
+  personasSaveOne,
+  chatHistoryLoad,
+  chatHistorySave,
+  collectedChatLoad,
+  collectedChatAppend,
+  profilesLoadAll,
+  profileGet,
+  profileSet,
+  passwordsLoadAll,
+  passwordSet
+};

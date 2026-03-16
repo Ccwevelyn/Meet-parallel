@@ -43,7 +43,11 @@ app.use((err, req, res, next) => {
 const server = app.listen(PORT, () => {
   console.log(`在平行时空再见 · 运行于 http://localhost:${PORT}`);
   const dataDir = getDataDir();
-  if (process.env.DATA_DIR) console.log('数据目录（持久化）:', dataDir);
+  if (process.env.DATA_DIR) {
+    console.log('数据目录（持久化）:', dataDir);
+  } else if (process.env.PORT) {
+    console.warn('未设置 DATA_DIR，当前为临时磁盘，重启/重新部署后数据会丢失。部署后要持久存储请添加 Disk 并设置环境变量 DATA_DIR（如 /data）。');
+  }
 });
 server.on('error', (err) => {
   console.error('服务启动错误', err.message || err);

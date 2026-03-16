@@ -7,25 +7,10 @@ const { getMemberById, getMemberByIdOrName } = require('./members');
 const { hasAvatarFile } = require('./avatar');
 
 const router = express.Router();
-const { getDataPath, ensureDataDir } = require('./data-path');
-const PROFILES_FILE = getDataPath('profiles.json');
+const db = require('./db');
 const AVATARS_DIR = path.join(__dirname, '..', 'public', 'avatars');
 
-ensureDataDir();
 if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
-
-function loadProfiles() {
-  try {
-    if (fs.existsSync(PROFILES_FILE)) {
-      return JSON.parse(fs.readFileSync(PROFILES_FILE, 'utf8'));
-    }
-  } catch (_) {}
-  return {};
-}
-
-function saveProfiles(profiles) {
-  fs.writeFileSync(PROFILES_FILE, JSON.stringify(profiles, null, 2), 'utf8');
-}
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, AVATARS_DIR),
@@ -50,8 +35,7 @@ router.get('/:memberId', (req, res) => {
   const member = getMemberByIdOrName(raw);
   if (!member) return res.status(404).json({ error: '成员不存在' });
   const id = member.id;
-  const profiles = loadProfiles();
-  const bio = (profiles[id] && profiles[id].bio) || '';
+  const bio = db.profileGet(id);
   res.json({
     memberId: id,
     displayName: member.displayName || member.name,
@@ -69,9 +53,7 @@ router.post('/', requireAuth, (req, res, next) => {
       return res.status(400).json({ error: err.message || '上传失败' });
     }
     const id = (req.user.memberId || '').replace(/[^a-z0-9_]/gi, '');
-    const profiles = loadProfiles();
-    if (!profiles[id]) profiles[id] = {};
-    if (typeof req.body.bio === 'string') profiles[id].bio = req.body.bio.trim().slice(0, 2000);
+    if (typeof req.body.bio === 'string') db.profileSet(id, req.body.bio.trim().slice(0, 2000));
     if (req.file) {
       const currentName = req.file.filename || '';
       ['.jpg', '.jpeg', '.png', '.gif', '.webp'].forEach(e => {
@@ -81,8 +63,8 @@ router.post('/', requireAuth, (req, res, next) => {
         }
       });
     }
-    saveProfiles(profiles);
-    res.json({ ok: true, bio: profiles[id].bio || '', avatarUrl: '/api/avatar/' + id });
+    const bio = db.profileGet(id);
+    res.json({ ok: true, bio: bio || '', avatarUrl: '/api/avatar/' + id });
   });
 });
 

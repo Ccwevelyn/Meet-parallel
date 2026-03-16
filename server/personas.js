@@ -1,29 +1,15 @@
-const path = require('path');
-const fs = require('fs');
 const { getMemberById } = require('./members');
-const { getDataPath, ensureDataDir } = require('./data-path');
-
-const CHAT_FILE = getDataPath('chat-history.json');
-const PERSONAS_FILE = getDataPath('personas.json');
-const COLLECTED_FILE = getDataPath('collected-chat.json');
+const db = require('./db');
 
 /**
  * 读取已导入的聊天记录（可与采集对话合并做人设）
  */
 function loadChatHistory() {
-  try {
-    if (fs.existsSync(CHAT_FILE)) {
-      const data = JSON.parse(fs.readFileSync(CHAT_FILE, 'utf8'));
-      return data.messages || [];
-    }
-  } catch (e) {
-    console.warn('读取 chat-history.json 失败', e.message);
-  }
-  return [];
+  return db.chatHistoryLoad();
 }
 
 /**
- * 按发送人分组，并计算每人发言时段分布、最近 N 条作为样本
+ * 按发送人分组，并计算每人发言时段分布、取 N 条作为样本（sampleSize 为 0 时取全部）
  */
 function buildPersonas(messages, options = {}) {
   const { sampleSize = 50 } = options;
@@ -45,7 +31,8 @@ function buildPersonas(messages, options = {}) {
   const personas = {};
   for (const [name, data] of Object.entries(bySender)) {
     const sorted = data.messages.slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-    const samples = sorted.slice(-sampleSize).map(m => m.text).filter(Boolean);
+    const take = sampleSize > 0 ? sorted.slice(-sampleSize) : sorted;
+    const samples = take.map(m => m.text).filter(Boolean);
     const hourCounts = data.hours;
     const total = Object.values(hourCounts).reduce((a, b) => a + b, 0);
     const activeHours = total > 0
@@ -67,59 +54,23 @@ function buildPersonas(messages, options = {}) {
   return personas;
 }
 
-/**
- * 保存人设并写入 data/personas.json
- */
 function savePersonas(personas) {
-  ensureDataDir();
-  fs.writeFileSync(PERSONAS_FILE, JSON.stringify(personas, null, 2), 'utf8');
+  db.personasSaveAll(personas);
   return Object.keys(personas).length;
 }
 
-/**
- * 读取已训练的人设
- */
 function loadPersonas() {
-  try {
-    if (fs.existsSync(PERSONAS_FILE)) {
-      return JSON.parse(fs.readFileSync(PERSONAS_FILE, 'utf8'));
-    }
-  } catch (e) {
-    console.warn('读取 personas.json 失败', e.message);
-  }
-  return {};
+  return db.personasLoadAll();
 }
 
-/**
- * 读取「和 AI 对话采集」保存的用户消息（用于与人设合并）
- * 格式：{ messages: [ { sender (成员 name), text, time } ] }
- */
 function loadCollectedChat() {
-  try {
-    if (fs.existsSync(COLLECTED_FILE)) {
-      const data = JSON.parse(fs.readFileSync(COLLECTED_FILE, 'utf8'));
-      const list = data.messages || data.entries || [];
-      return Array.isArray(list) ? list : [];
-    }
-  } catch (e) {
-    console.warn('读取 collected-chat.json 失败', e.message);
-  }
-  return [];
+  return db.collectedChatLoad();
 }
 
-/**
- * 追加一条采集到的用户消息
- */
 function appendCollectedMessage(entry) {
-  ensureDataDir();
-  const list = loadCollectedChat();
-  list.push(entry);
-  fs.writeFileSync(COLLECTED_FILE, JSON.stringify({ messages: list, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
+  db.collectedChatAppend(entry);
 }
 
-/**
- * 合并「导入的聊天记录」+「采集对话」，重新生成人设
- */
 function mergeCollectedIntoPersonas(options = {}) {
   const history = loadChatHistory();
   const collected = loadCollectedChat();
@@ -129,13 +80,8 @@ function mergeCollectedIntoPersonas(options = {}) {
   return Object.keys(personas).length;
 }
 
-/** 单条样本最多保留数量，与 updatePersona 中一致 */
 const MAX_SAMPLE_MESSAGES = 200;
 
-/**
- * 用户以成员身份在群聊里发言时，把该条消息加入该成员的人设样本（即时学习语气与习惯）
- * 同时写入 collected-chat，便于后续「合并人设」时一并参与
- */
 function appendChatMessageToPersona(memberId, text, time) {
   if (!memberId || memberId === 'admin' || !text || typeof text !== 'string') return;
   const member = getMemberById(memberId);
@@ -160,9 +106,6 @@ function appendChatMessageToPersona(memberId, text, time) {
   }
 }
 
-/**
- * 管理员微调：更新某人设的 activeHours、sampleMessages 等
- */
 function updatePersona(name, patch) {
   const personas = loadPersonas();
   if (!personas[name]) {
@@ -194,5 +137,6 @@ module.exports = {
   loadCollectedChat,
   appendCollectedMessage,
   appendChatMessageToPersona,
-  mergeCollectedIntoPersonas
+  mergeCollectedIntoPersonas,
+  chatHistorySave: db.chatHistorySave
 };

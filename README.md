@@ -75,6 +75,11 @@ npm start
 1. **采集语气**：改模式登录 → 点击「采集语气」→ 与页面里的假 AI 聊约 10 分钟 → 结束并合并人设。
 2. **导入聊天记录**：将历史聊天按格式放入 `data/chat-history.json`，通过合并生成人设。
 3. **群聊自动学习**：你以成员身份在群聊里发的每条消息，会**自动追加**到该成员的人设样本（并写入 `data/collected-chat.json`），无需再单独采集。
+4. **从 CSV 批量学习**：若已有爬取的群聊 CSV（列：成员, 时间, 内容），在项目根目录执行：
+   ```bash
+   node scripts/learn-from-csv.js [CSV路径]
+   ```
+   不写路径时默认使用 `CS小分队_聊群记录.csv`。脚本会：按成员提取**语气样本**、统计**活跃时段**、根据「是否在他人发言后 2 分钟内回复」生成**回复习惯**，并写入数据库（仅更新 `server/members.js` 中存在的成员）。
 
 ### AI 如何用这些人设
 
@@ -96,6 +101,8 @@ npm start
 
 ## 部署到 Render
 
+**若希望部署后人设、聊天记录、密码等持久保留（重启/重新部署也不丢），必须按下面「数据持久化」配置 Disk + `DATA_DIR`，否则数据会在每次重启或重新部署时清空。**
+
 1. 将代码推送到 GitHub，在 Render 中 **New → Web Service**，连接该仓库。
 2. **Build Command**：`npm install`；**Start Command**：`npm start`。
 3. 在 **Environment** 中按需添加：
@@ -105,20 +112,19 @@ npm start
    | `LOGIN_CREDENTIALS` | 成员密码 JSON 字符串（见上文） |
    | `ADMIN_PASSWORD` | 管理员密码，默认 Cc921 |
    | `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` | 接 AI 时填写 |
+   | **`DATA_DIR`** | **部署后要持久存储必填**：填挂载的磁盘路径，例如 `/data`（需先添加 Disk，见下） |
 
-4. 创建服务后，用生成的 URL 访问。
+4. **数据持久化（部署后数据不丢）**：所有数据存于 **SQLite 数据库**（`data/app.db` 或 `DATA_DIR/app.db`）。在 Render 的 Web Service 里点击 **Disks**，新建磁盘并挂载路径 **`/data`**；在 Environment 里添加 **`DATA_DIR`** = **`/data`**。保存并重新部署后，数据库文件落在该磁盘上，**人设、聊天记录、采集、密码等永久保留**。
+5. 创建服务后，用生成的 URL 访问。
 
-### 让数据持久化（人设、聊天记录、密码不因重启/部署丢失）
+本地运行时无需设置 `DATA_DIR`，数据库会保存在项目下的 `data/app.db`。
 
-Render 免费实例的磁盘是**临时的**：重启或重新部署后，`data/` 里的人设、聊天记录、采集内容、修改的密码等会**被清空**。若希望「学习完语气、下次登录聊天记录和人设都还在」，需要挂载**持久化磁盘**并让应用把数据写到该盘：
+### 推荐流程：本地先学习人设，再带人设部署
 
-1. 在 Render 的 Web Service 里点击 **Disks**（或 Settings → Add Disk），新建一块磁盘，挂载路径填 **`/data`**（或任意路径，下面以 `/data` 为例）。
-2. 在 **Environment** 里添加环境变量：
-   - **Key**：`DATA_DIR`
-   - **Value**：`/data`
-3. 保存并重新部署。之后所有人设、聊天记录、采集对话、密码修改等都会写入该磁盘，重启或重新部署后仍会保留。
-
-本地运行时无需设置 `DATA_DIR`，数据会保存在项目下的 `data/` 目录。
+1. **本地**：运行 `node scripts/learn-from-csv.js`（或采集语气、群聊等），在本地生成带人设的 `data/app.db`。
+2. **提交人设**：将 `data/app.db` 加入版本库并 push（当前未将 `app.db` 加入 .gitignore，可直接 `git add data/app.db` 后提交；若库很大可先不提交，改用部署后重新跑脚本或导入）。
+3. **部署**：在 Render 上配置 Disk + `DATA_DIR=/data` 后部署。**首次启动时**，若持久化目录下还没有数据库，会自动用仓库里的 `data/app.db` 作为种子复制过去，云端一上线就带好人设。
+4. **之后**：用户在云端群聊、采集或管理员微调，都只是在**调整**该持久化数据库里的人设与消息，重启或重新部署也不会丢。
 
 ---
 
@@ -126,7 +132,7 @@ Render 免费实例的磁盘是**临时的**：重启或重新部署后，`data/
 
 - **后端**：Node.js + Express  
 - **前端**：静态 HTML / CSS / JS，米白简约风格  
-- **数据**：人设与消息存于 `data/`（personas.json、messages.json、collected-chat.json 等）
+- **数据**：SQLite 单文件 `data/app.db`（或 `DATA_DIR/app.db`），存消息、人设、采集、资料、密码等；部署时挂载磁盘即可持久化
 
 ---
 

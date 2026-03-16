@@ -1,9 +1,8 @@
 const path = require('path');
 const fs = require('fs');
 const { getAllMembers } = require('./members');
-const { getDataPath, ensureDataDir } = require('./data-path');
+const db = require('./db');
 
-const PASSWORDS_FILE = getDataPath('passwords.json');
 const DEFAULT_PASSWORD = '123456';
 
 function loadJson(filePath) {
@@ -33,8 +32,12 @@ function loadCredentials() {
 }
 
 function loadPasswordOverrides() {
-  const data = loadJson(PASSWORDS_FILE);
-  return (data && typeof data === 'object') ? data : {};
+  try {
+    return db.passwordsLoadAll();
+  } catch (e) {
+    console.warn('读取密码覆盖失败', e.message);
+    return {};
+  }
 }
 
 let baseCredentials;
@@ -82,11 +85,13 @@ function checkPassword(username, password) {
 
 function updatePassword(name, newPassword) {
   if (!name || typeof newPassword !== 'string' || newPassword.length < 1) return false;
-  ensureDataDir();
-  const current = loadPasswordOverrides();
-  current[name] = newPassword.slice(0, 200);
-  fs.writeFileSync(PASSWORDS_FILE, JSON.stringify(current, null, 2), 'utf8');
-  return true;
+  try {
+    db.passwordSet(name, newPassword.slice(0, 200));
+    return true;
+  } catch (e) {
+    console.warn('更新密码失败', e.message);
+    return false;
+  }
 }
 
 module.exports = { checkPassword, updatePassword };
