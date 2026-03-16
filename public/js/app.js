@@ -636,4 +636,24 @@
       .catch(function () { alert('请求失败'); })
       .finally(function () { btn.disabled = false; });
   });
+
+  document.getElementById('admin-rebuild-personas-btn')?.addEventListener('click', function () {
+    if (!window._token) return;
+    if (!confirm('将根据「导入的聊天记录 + 采集对话」重新合并人设，样本消息不再限制条数。确定继续？')) return;
+    var btn = this;
+    btn.disabled = true;
+    fetch(API + '/admin/personas/rebuild', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + window._token }
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.ok) {
+          alert('已重新合并 ' + (data.count || 0) + ' 个人设，样本条数已按全部数据更新。');
+          loadAdminPersonas();
+        } else alert(data.error || '重新合并失败');
+      })
+      .catch(function () { alert('请求失败'); })
+      .finally(function () { btn.disabled = false; });
+  });
 })();

@@ -4,7 +4,7 @@
 const express = require('express');
 const { requireAuth, requireAdmin } = require('./auth');
 const { getAllMembers } = require('./members');
-const { loadPersonas, updatePersona } = require('./personas');
+const { loadPersonas, updatePersona, mergeCollectedIntoPersonas } = require('./personas');
 const { messagesClearAll } = require('./db');
 
 const router = express.Router();
@@ -49,6 +49,16 @@ router.post('/messages/clear', (req, res) => {
     return res.json({ ok: true, deleted });
   } catch (e) {
     return res.status(500).json({ error: e.message || '清空失败' });
+  }
+});
+
+// POST 从现有数据重新合并人设（chat_history + 采集），不设样本条数上限，用于解除之前的 80 条限制
+router.post('/personas/rebuild', (req, res) => {
+  try {
+    const count = mergeCollectedIntoPersonas({ sampleSize: 0 });
+    return res.json({ ok: true, count });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || '重新合并失败' });
   }
 });
 
