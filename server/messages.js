@@ -3,6 +3,7 @@ const fs = require('fs');
 const express = require('express');
 const { requireAuth } = require('./auth');
 const { getDisplayName } = require('./members');
+const { appendChatMessageToPersona } = require('./personas');
 
 const router = express.Router();
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -91,6 +92,8 @@ router.post('/', requireAuth, (req, res) => {
   };
   messages.push(msg);
   saveMessages();
+  // 真人发言时同步加入该成员的人设样本，供 AI 即时学习语气与习惯
+  appendChatMessageToPersona(req.user.memberId, msg.text, msg.time);
   res.json({ message: msg });
 });
 

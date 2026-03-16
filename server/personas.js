@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const { getMemberById } = require('./members');
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const CHAT_FILE = path.join(DATA_DIR, 'chat-history.json');
@@ -134,6 +135,37 @@ function mergeCollectedIntoPersonas(options = {}) {
   return Object.keys(personas).length;
 }
 
+/** 单条样本最多保留数量，与 updatePersona 中一致 */
+const MAX_SAMPLE_MESSAGES = 200;
+
+/**
+ * 用户以成员身份在群聊里发言时，把该条消息加入该成员的人设样本（即时学习语气与习惯）
+ * 同时写入 collected-chat，便于后续「合并人设」时一并参与
+ */
+function appendChatMessageToPersona(memberId, text, time) {
+  if (!memberId || memberId === 'admin' || !text || typeof text !== 'string') return;
+  const member = getMemberById(memberId);
+  if (!member || !member.name) return;
+  const trimmed = text.trim().slice(0, 2000);
+  if (!trimmed) return;
+  const isoTime = time || new Date().toISOString();
+  try {
+    appendCollectedMessage({ sender: member.name, text: trimmed, time: isoTime });
+    const personas = loadPersonas();
+    if (!personas[member.name]) {
+      personas[member.name] = { name: member.name, messageCount: 0, sampleMessages: [], activeHours: [], replyHabits: '', updatedAt: new Date().toISOString() };
+    }
+    const list = personas[member.name].sampleMessages || [];
+    list.push(trimmed);
+    personas[member.name].sampleMessages = list.slice(-MAX_SAMPLE_MESSAGES);
+    personas[member.name].messageCount = (personas[member.name].messageCount || 0) + 1;
+    personas[member.name].updatedAt = new Date().toISOString();
+    savePersonas(personas);
+  } catch (e) {
+    console.warn('追加群聊发言到人设失败', e.message);
+  }
+}
+
 /**
  * 管理员微调：更新某人设的 activeHours、sampleMessages 等
  */
@@ -167,6 +199,7 @@ module.exports = {
   updatePersona,
   loadCollectedChat,
   appendCollectedMessage,
+  appendChatMessageToPersona,
   mergeCollectedIntoPersonas,
   DATA_DIR
 };
