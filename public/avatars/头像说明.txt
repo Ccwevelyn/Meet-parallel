@@ -1,0 +1,21 @@
+直接放头像方式（无需上传页面）
+================================
+
+把各成员的微信头像图片放进本文件夹，按下面文件名命名即可在聊天里显示。
+
+文件名（任选一种格式，支持 .jpg / .jpeg / .png / .gif / .webp）：
+  member_1.jpg  → 复制粘贴吧黄牌 (Cheng)
+  member_2.jpg  → 离离原上草 (Xian)
+  member_3.jpg  → 群之共主 (Wang)
+  member_4.jpg  → L.ing (Lin)
+  member_5.jpg  → 话痨用户 (Gao)
+  member_6.jpg  → 小七 (Sev)
+  member_7.jpg  → 伍子軒 (Wu)
+  member_8.jpg  → Looking up at the starry sky (Evelyn)
+  member_9.jpg  → 小可 (Morty)
+  member_10.jpg → 石墨烯 (Chen)
+  member_11.jpg → 小米康 (Kang)
+  member_12.jpg → Tree (Zhang)
+  member_13.jpg → 烟火° (Bao)
+
+放好后重启或刷新网页即可。

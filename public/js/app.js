@@ -1,0 +1,489 @@
+(function () {
+  const API = '/api';
+
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+    const el = document.getElementById(id);
+    if (el) el.classList.add('active');
+  }
+
+  function showError(elId, msg) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    el.textContent = msg || '';
+    el.classList.toggle('hidden', !msg);
+  }
+
+  function apiJson(url, opts) {
+    return fetch(url, opts).then(r => r.json().then(data => ({ ok: r.ok, data, status: r.status })).catch(() => ({ ok: false, data: { error: '响应格式错误' }, status: r.status })));
+  }
+
+  function showModal(modalId, show) {
+    const m = document.getElementById(modalId);
+    if (!m) return;
+    m.classList.toggle('hidden', !show);
+    m.style.display = show ? 'flex' : '';
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  function appendMessage(container, m) {
+    const isChat = container.id === 'chat-messages';
+    const isMe = isChat && window._member && (m.isHuman || (m.memberName === window._member.displayName));
+    const avatarSrc = m.memberId ? '/api/avatar/' + m.memberId : '';
+    const time = m.time ? new Date(m.time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
+    const msgClass = 'msg' + (m.isHuman ? ' human' : '') + (isChat ? (isMe ? ' msg-me' : ' msg-other') : ' msg-other');
+    const header = '<div class="msg-header">' + escapeHtml(m.memberName || '') + ' · ' + time + '</div>';
+    const body = '<div class="msg-body">' + escapeHtml(m.text || '') + '</div>';
+    const content = '<div class="msg-content">' + header + body + '</div>';
+    const initial = (m.memberName || m.memberId || '')[0] || '?';
+    const avatarHtml = m.memberId
+      ? '<div class="msg-avatar-wrap" data-member-id="' + escapeHtml(m.memberId) + '" data-member-name="' + escapeHtml(m.memberName || '') + '" data-initial="' + escapeHtml(initial) + '" title="点击查看人物小传"><img class="msg-avatar" src="' + escapeHtml(avatarSrc) + '" alt="" onerror="var w=this.parentElement;w.classList.add(\'no-img\');this.style.display=\'none\'"></div>'
+      : '';
+    const div = document.createElement('div');
+    div.className = msgClass;
+    if (m.memberId) {
+      div.setAttribute('data-member-id', m.memberId);
+      div.setAttribute('data-member-name', m.memberName || '');
+      div.title = '点击查看人物小传';
+    }
+    div.innerHTML = isChat && isMe ? content + avatarHtml : avatarHtml + content;
+    container.appendChild(div);
+  }
+
+  function fetchMessages(sinceId, token) {
+    const url = sinceId ? API + '/messages?sinceId=' + sinceId : API + '/messages';
+    const opts = token ? { headers: { Authorization: 'Bearer ' + token } } : {};
+    return fetch(url, opts).then(r => r.json());
+  }
+
+  function renderMessageList(containerId, list, lastIdRef) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    (list || []).forEach(m => appendMessage(container, m));
+    if (list.length && lastIdRef) lastIdRef.current = Math.max(lastIdRef.current || 0, ...list.map(m => m.id));
+    container.scrollTop = container.scrollHeight;
+  }
+
+  // ——— 入口：诗句后显示 观/改 ———
+  setTimeout(() => document.getElementById('choice-boxes')?.classList.remove('hidden'), 1200);
+
+  document.getElementById('choice-observe')?.addEventListener('click', function (e) {
+    e.preventDefault();
+    showScreen('screen-observe');
+    startObservePolling();
+  });
+
+  document.getElementById('choice-edit')?.addEventListener('click', function (e) {
+    e.preventDefault();
+    showScreen('screen-login');
+    showError('login-error', '');
+  });
+
+  // ——— 观：只读 ———
+  let observeTimer = null;
+  const observeLastId = { current: 0 };
+  function startObservePolling() {
+    if (observeTimer) clearInterval(observeTimer);
+    fetchMessages().then(data => {
+      const list = data.messages || [];
+      document.getElementById('observe-messages').innerHTML = '';
+      renderMessageList('observe-messages', list, observeLastId);
+    }).catch(() => {});
+    observeTimer = setInterval(() => {
+      fetchMessages(observeLastId.current).then(data => {
+        const list = data.messages || [];
+        if (list.length) renderMessageList('observe-messages', list, observeLastId);
+      }).catch(() => {});
+    }, 3000);
+  }
+
+  document.getElementById('back-from-observe')?.addEventListener('click', function () {
+    if (observeTimer) clearInterval(observeTimer);
+    observeTimer = null;
+    showScreen('screen-intro');
+  });
+
+  // ——— 改：登录 ———
+  const loginForm = document.getElementById('login-form');
+  const loginUsername = document.getElementById('login-username');
+  const loginPassword = document.getElementById('login-password');
+  loginForm?.addEventListener('submit', function (e) {
+    e.preventDefault();
+    const username = (loginUsername?.value || '').trim();
+    const password = loginPassword?.value || '';
+    showError('login-error', '');
+    if (!username) { showError('login-error', '请输入用户名'); return; }
+    apiJson(API + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    }).then(({ ok, data, status }) => {
+      if (ok && data.token) {
+        window._token = data.token;
+        window._member = data.member;
+        window._role = data.role || null;
+        if (data.role === 'admin') {
+          showScreen('screen-admin');
+          loadAdminPersonas();
+        } else {
+          showScreen('screen-chat');
+          const titleEl = document.getElementById('my-identity');
+          if (titleEl) titleEl.textContent = data.member?.displayName || data.member?.name || '';
+          startChatPolling();
+        }
+      } else {
+        let msg = data.error || '登录失败';
+        if (status === 503 || /未配置|credentials|请先在服务端/.test(msg)) {
+          msg = '服务暂时不可用。请确认已在项目目录执行 npm start 启动后端，默认密码 123456，无需单独配置 credentials。';
+        }
+        showError('login-error', msg);
+      }
+    }).catch(() => showError('login-error', '网络错误或后端未启动，请确认已执行 npm start 后重试。'));
+  });
+  document.getElementById('back-from-login')?.addEventListener('click', () => showScreen('screen-intro'));
+
+  // ——— 改：聊天 ———
+  const chatLastId = { current: 0 };
+  function startChatPolling() {
+    fetchMessages().then(data => {
+      const list = data.messages || [];
+      document.getElementById('chat-messages').innerHTML = '';
+      renderMessageList('chat-messages', list, chatLastId);
+    }).then(() => {
+      setInterval(() => {
+        if (!window._token) return;
+        fetchMessages(chatLastId.current, window._token).then(data => {
+          const list = data.messages || [];
+          if (list.length) renderMessageList('chat-messages', list, chatLastId);
+        }).catch(() => {});
+      }, 2000);
+    }).catch(() => {});
+  }
+
+  const chatForm = document.getElementById('chat-form');
+  const chatInput = document.getElementById('chat-input');
+  chatForm?.addEventListener('submit', function (e) {
+    e.preventDefault();
+    const text = (chatInput?.value || '').trim();
+    if (!text || !window._token) return;
+    fetch(API + '/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + window._token },
+      body: JSON.stringify({ text })
+    })
+      .then(r => r.json().then(data => ({ ok: r.ok, data })))
+      .then(({ ok, data }) => {
+        if (ok && data.message) {
+          const container = document.getElementById('chat-messages');
+          appendMessage(container, data.message);
+          chatLastId.current = Math.max(chatLastId.current, data.message.id);
+          container.scrollTop = container.scrollHeight;
+          if (chatInput) chatInput.value = '';
+        }
+      })
+      .catch(() => {});
+  });
+  document.getElementById('back-from-chat')?.addEventListener('click', function () {
+    window._token = null;
+    window._member = null;
+    showScreen('screen-intro');
+  });
+
+  document.getElementById('collect-btn')?.addEventListener('click', function (e) {
+    e.preventDefault();
+    if (!window._token) return;
+    showScreen('screen-collect');
+    document.getElementById('collect-intro').classList.remove('hidden');
+    document.getElementById('collect-chat').classList.add('hidden');
+    document.getElementById('collect-done').classList.add('hidden');
+  });
+
+  // ——— 人物小传弹窗（点击整条消息或头像） ———
+  function openProfileModal(memberId, fallbackName) {
+    const modal = document.getElementById('profile-view-modal');
+    const setContent = (name, bio) => {
+      modal.querySelector('.profile-view-name').textContent = name || '未知';
+      modal.querySelector('.profile-view-bio').textContent = bio || '暂无人物小传';
+    };
+    fetch(API + '/profile/' + memberId)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(data => {
+        const avatarEl = modal.querySelector('.profile-view-avatar');
+        const url = data.avatarUrl ? data.avatarUrl + '?t=' + Date.now() : '';
+        avatarEl.innerHTML = url ? '<img src="' + url + '" alt="" onerror="this.parentElement.classList.add(\'no-avatar\')">' : '';
+        avatarEl.classList.toggle('no-avatar', !url);
+        setContent(data.displayName || fallbackName, (data.bio && data.bio.trim()) ? data.bio : null);
+        showModal('profile-view-modal', true);
+      })
+      .catch(() => {
+        modal.querySelector('.profile-view-avatar').innerHTML = '';
+        modal.querySelector('.profile-view-avatar').classList.add('no-avatar');
+        setContent(fallbackName, null);
+        modal.querySelector('.profile-view-bio').textContent = '加载失败，请稍后再试。';
+        showModal('profile-view-modal', true);
+      });
+  }
+  document.getElementById('app').addEventListener('click', function (e) {
+    if (e.target.closest('input, button, textarea, .modal-close')) return;
+    const msg = e.target.closest('.msg[data-member-id]');
+    const wrap = e.target.closest('.msg-avatar-wrap[data-member-id]');
+    const memberId = (msg && msg.getAttribute('data-member-id')) || (wrap && wrap.getAttribute('data-member-id'));
+    if (!memberId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const fallbackName = (msg && msg.getAttribute('data-member-name')) || (wrap && wrap.getAttribute('data-member-name')) || '';
+    openProfileModal(memberId, fallbackName);
+  }, true);
+  document.getElementById('profile-view-close')?.addEventListener('click', () => showModal('profile-view-modal', false));
+  document.querySelector('#profile-view-modal .modal-backdrop')?.addEventListener('click', () => showModal('profile-view-modal', false));
+
+  // ——— 编辑资料（头像、小传、修改密码） ———
+  const editBtn = document.getElementById('edit-profile-btn');
+  const editModal = document.getElementById('profile-edit-modal');
+  const editAvatarPreview = document.getElementById('profile-edit-avatar-preview');
+  const editAvatarInput = document.getElementById('profile-edit-avatar-input');
+  const editBio = document.getElementById('profile-edit-bio');
+  const editOldPwd = document.getElementById('profile-edit-old-pwd');
+  const editNewPwd = document.getElementById('profile-edit-new-pwd');
+  const editStatus = document.getElementById('profile-edit-status');
+  const editSave = document.getElementById('profile-edit-save');
+
+  function showEditStatus(msg, isError) {
+    if (!editStatus) return;
+    editStatus.textContent = msg || '';
+    editStatus.classList.toggle('hidden', !msg);
+    editStatus.style.color = isError ? '#a44' : '';
+  }
+
+  editBtn?.addEventListener('click', function () {
+    if (!window._member || !window._token) return;
+    editAvatarPreview.style.display = '';
+    editAvatarPreview.onerror = function () { this.alt = '暂无头像'; this.style.background = 'var(--border)'; };
+    editAvatarPreview.onload = function () { this.alt = ''; this.style.background = ''; };
+    editAvatarPreview.src = '/api/avatar/' + window._member.id + '?t=' + Date.now();
+    editAvatarInput.value = '';
+    editBio.value = '';
+    if (editOldPwd) editOldPwd.value = '';
+    if (editNewPwd) editNewPwd.value = '';
+    showEditStatus('');
+    fetch(API + '/profile/' + window._member.id)
+      .then(r => r.ok ? r.json() : {})
+      .then(data => { if (data.bio) editBio.value = data.bio; })
+      .catch(() => {});
+    editModal.classList.remove('hidden');
+  });
+
+  document.getElementById('profile-edit-close')?.addEventListener('click', () => editModal?.classList.add('hidden'));
+  document.querySelector('#profile-edit-modal .modal-backdrop')?.addEventListener('click', () => editModal?.classList.add('hidden'));
+
+  editAvatarInput?.addEventListener('change', function () {
+    const f = this.files && this.files[0];
+    if (!f) return;
+    editAvatarPreview.src = URL.createObjectURL(f);
+    editAvatarPreview.style.display = '';
+  });
+
+  editSave?.addEventListener('click', function () {
+    if (!window._token) return;
+    const newPwd = editNewPwd?.value?.trim();
+    const oldPwd = editOldPwd?.value || '';
+    if (newPwd) {
+      if (newPwd.length < 6) { showEditStatus('新密码不少于 6 位', true); return; }
+      if (!oldPwd) { showEditStatus('修改密码请先输入当前密码', true); return; }
+    }
+    showEditStatus('保存中…');
+    const fd = new FormData();
+    fd.append('bio', editBio.value || '');
+    if (editAvatarInput.files && editAvatarInput.files[0]) fd.append('avatar', editAvatarInput.files[0]);
+    const doSave = () => {
+      apiJson(API + '/profile', { method: 'POST', headers: { Authorization: 'Bearer ' + window._token }, body: fd })
+        .then(({ ok, data }) => {
+          if (!ok) { showEditStatus(data.error || '保存失败', true); return; }
+          showEditStatus('已保存');
+          editAvatarPreview.src = '/api/avatar/' + window._member.id + '?t=' + Date.now();
+          editAvatarInput.value = '';
+          if (editOldPwd) editOldPwd.value = '';
+          if (editNewPwd) editNewPwd.value = '';
+          setTimeout(() => { editModal.classList.add('hidden'); showEditStatus(''); }, 800);
+        })
+        .catch(() => showEditStatus('网络错误', true));
+    };
+    if (newPwd && oldPwd) {
+      apiJson(API + '/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + window._token },
+        body: JSON.stringify({ oldPassword: oldPwd, newPassword: newPwd })
+      }).then(({ ok, data }) => {
+        if (!ok) { showEditStatus(data.error || '密码修改失败', true); return; }
+        doSave();
+      }).catch(() => showEditStatus('网络错误', true));
+    } else {
+      doSave();
+    }
+  });
+
+  // ——— 对话采集（和 AI 聊 10 分钟） ———
+  let collectCountdownTimer = null;
+  let collectRemainingMs = 0;
+
+  function formatCollectTime(ms) {
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    return '剩余 ' + m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function appendCollectLine(role, text) {
+    const container = document.getElementById('collect-messages');
+    if (!container) return;
+    const div = document.createElement('div');
+    div.className = 'msg msg-' + (role === 'user' ? 'me' : 'other');
+    const time = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    const header = '<div class="msg-header">' + (role === 'user' ? '我' : 'AI') + ' · ' + time + '</div>';
+    const body = '<div class="msg-body">' + escapeHtml(text) + '</div>';
+    div.innerHTML = '<div class="msg-content">' + header + body + '</div>';
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  document.getElementById('collect-start-btn')?.addEventListener('click', function () {
+    if (!window._token) return;
+    fetch(API + '/collect/start', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + window._token }
+    })
+      .then(r => r.json())
+      .then(function (data) {
+        if (!data.ok && !data.reply) { return; }
+        document.getElementById('collect-intro').classList.add('hidden');
+        document.getElementById('collect-chat').classList.remove('hidden');
+        document.getElementById('collect-messages').innerHTML = '';
+        appendCollectLine('assistant', data.reply);
+        collectRemainingMs = data.remainingMs || 10 * 60 * 1000;
+        document.getElementById('collect-countdown').textContent = formatCollectTime(collectRemainingMs);
+        if (collectCountdownTimer) clearInterval(collectCountdownTimer);
+        collectCountdownTimer = setInterval(function () {
+          collectRemainingMs -= 1000;
+          if (collectRemainingMs <= 0) {
+            clearInterval(collectCountdownTimer);
+            collectCountdownTimer = null;
+            document.getElementById('collect-countdown').textContent = '时间到，请点击「结束并合并人设」';
+            document.getElementById('collect-input').disabled = true;
+            document.getElementById('collect-form').querySelector('button[type="submit"]').disabled = true;
+          } else {
+            document.getElementById('collect-countdown').textContent = formatCollectTime(collectRemainingMs);
+          }
+        }, 1000);
+      })
+      .catch(function () {});
+  });
+
+  document.getElementById('collect-form')?.addEventListener('submit', function (e) {
+    e.preventDefault();
+    const input = document.getElementById('collect-input');
+    const text = (input?.value || '').trim();
+    if (!text || !window._token) return;
+    appendCollectLine('user', text);
+    input.value = '';
+    fetch(API + '/collect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + window._token },
+      body: JSON.stringify({ text: text })
+    })
+      .then(r => r.json())
+      .then(function (data) {
+        if (data.reply) appendCollectLine('assistant', data.reply);
+        if (data.remainingMs !== undefined) collectRemainingMs = data.remainingMs;
+        if (data.code === 'TIME_UP') {
+          if (collectCountdownTimer) clearInterval(collectCountdownTimer);
+          collectCountdownTimer = null;
+          document.getElementById('collect-countdown').textContent = '时间到，请点击「结束并合并人设」';
+          document.getElementById('collect-input').disabled = true;
+          document.getElementById('collect-form').querySelector('button[type="submit"]').disabled = true;
+        }
+      })
+      .catch(function () {});
+  });
+
+  document.getElementById('collect-end-btn')?.addEventListener('click', function () {
+    if (!window._token) return;
+    if (collectCountdownTimer) clearInterval(collectCountdownTimer);
+    collectCountdownTimer = null;
+    fetch(API + '/collect/end', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + window._token }
+    })
+      .then(r => r.json())
+      .then(function () {
+        document.getElementById('collect-chat').classList.add('hidden');
+        document.getElementById('collect-done').classList.remove('hidden');
+      })
+      .catch(function () {});
+  });
+
+  document.getElementById('back-from-collect')?.addEventListener('click', function () {
+    if (collectCountdownTimer) clearInterval(collectCountdownTimer);
+    collectCountdownTimer = null;
+    showScreen('screen-chat');
+  });
+  document.getElementById('collect-done-back')?.addEventListener('click', function () {
+    showScreen('screen-chat');
+  });
+
+  // ——— 管理员：微调人设 ———
+  function loadAdminPersonas() {
+    if (!window._token) return;
+    fetch(API + '/admin/personas', { headers: { Authorization: 'Bearer ' + window._token } })
+      .then(r => r.json())
+      .then(function (data) {
+        const list = data.personas || [];
+        const container = document.getElementById('admin-personas');
+        if (!container) return;
+        container.innerHTML = list.map(function (p) {
+          const hoursStr = (p.activeHours || []).join(', ');
+          const samplesCount = (p.sampleMessages || []).length;
+          return '<div class="admin-persona" data-name="' + escapeHtml(p.name) + '">' +
+            '<div class="admin-persona-head">' +
+              '<span class="admin-persona-name">' + escapeHtml(p.displayName || p.name) + '</span>' +
+              ' <span class="admin-persona-id">' + escapeHtml(p.name) + '</span>' +
+            '</div>' +
+            '<label>活跃时段（0–23 点，逗号分隔）</label>' +
+            '<input type="text" class="admin-hours" value="' + escapeHtml(hoursStr) + '" placeholder="如 9,10,14,20,21">' +
+            '<p class="admin-meta">样本消息 ' + samplesCount + ' 条</p>' +
+            '<button type="button" class="admin-save-btn">保存</button>' +
+            '</div>';
+        }).join('');
+        container.querySelectorAll('.admin-save-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const card = btn.closest('.admin-persona');
+            const name = card.getAttribute('data-name');
+            const hoursInput = card.querySelector('.admin-hours');
+            const raw = (hoursInput.value || '').trim();
+            const activeHours = raw ? raw.split(/[\s,，]+/).map(function (h) { const n = parseInt(h, 10); return isNaN(n) ? null : n; }).filter(function (n) { return n != null && n >= 0 && n <= 23; }) : [];
+            fetch(API + '/admin/personas', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + window._token },
+              body: JSON.stringify({ name: name, activeHours: activeHours })
+            })
+              .then(r => r.json())
+              .then(function (res) {
+                if (res.ok) { btn.textContent = '已保存'; setTimeout(function () { btn.textContent = '保存'; }, 1500); }
+              })
+              .catch(function () {});
+          });
+        });
+      })
+      .catch(function () {});
+  }
+
+  document.getElementById('back-from-admin')?.addEventListener('click', function () {
+    window._token = null;
+    window._member = null;
+    window._role = null;
+    showScreen('screen-intro');
+  });
+})();

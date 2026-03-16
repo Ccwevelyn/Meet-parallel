@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.local
+*.log
+.DS_Store
+credentials.json
+server/credentials.json
+data/chat-history.json
+data/personas.json
+sender-mapping.json
+data/sender-mapping.json
+data/profiles.json
+data/passwords.json
+data/collected-chat.json
