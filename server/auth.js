@@ -35,7 +35,7 @@ router.post('/login', (req, res) => {
     const password = body.password;
     if (!uname || !password) return res.status(400).json({ error: '请填写用户名与密码' });
 
-    if (uname === 'admin') {
+    if (uname.toLowerCase() === 'admin') {
       if (password !== ADMIN_PASSWORD) return res.status(401).json({ error: '密码错误' });
       const token = createToken({ memberId: 'admin', name: 'admin', displayName: '管理员', role: 'admin' });
       return res.json({ token, member: { id: 'admin', name: 'admin', displayName: '管理员' }, role: 'admin' });

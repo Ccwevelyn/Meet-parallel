@@ -4,6 +4,7 @@ const express = require('express');
 const multer = require('multer');
 const { requireAuth } = require('./auth');
 const { getMemberById, getMemberByIdOrName } = require('./members');
+const { hasAvatarFile } = require('./avatar');
 
 const router = express.Router();
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -55,7 +56,8 @@ router.get('/:memberId', (req, res) => {
     memberId: id,
     displayName: member.displayName || member.name,
     bio,
-    avatarUrl: '/api/avatar/' + id
+    avatarUrl: '/api/avatar/' + id,
+    hasAvatar: hasAvatarFile(id)
   });
 });
 

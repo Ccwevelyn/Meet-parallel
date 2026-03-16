@@ -1,23 +1,6 @@
 const { getAllMembers } = require('./members');
 const { loadPersonas } = require('./personas');
 
-// 未配置 API 或无人设样本时使用的占位回复
-const PLACEHOLDER_REPLIES = [
-  '嗯，有道理。',
-  '今天天气不错。',
-  '大家最近还好吗？',
-  '想起以前的事。',
-  '……',
-  '哈哈，是啊。',
-  '时间过得真快。',
-  '在的。',
-  '怎么了？',
-  '好。',
-  '改天再聊。',
-  '嗯嗯。',
-  '好吧。'
-];
-
 // 通用名 AI_*（DeepSeek/智谱等），兼容旧名 OPENAI_*
 const OPENAI_API_KEY = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
 const OPENAI_BASE_URL = process.env.AI_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
@@ -111,18 +94,11 @@ function pickMember(members, personas) {
 }
 
 /**
- * 生成一条回复：有 API 则用大模型学人设说话，否则用人设样本随机或占位
+ * 生成一条回复：仅通过大模型按人设生成，不随机选已有/占位句（人设与特征由 admin 管理页维护）
  */
 async function generateReply(member, recentMessages, personas) {
-  if (OPENAI_API_KEY) {
-    const generated = await generateWithLLM(member, recentMessages, personas);
-    if (generated) return generated;
-  }
-  const p = personas[member.name];
-  if (p && p.sampleMessages && p.sampleMessages.length > 0) {
-    return p.sampleMessages[Math.floor(Math.random() * p.sampleMessages.length)];
-  }
-  return PLACEHOLDER_REPLIES[Math.floor(Math.random() * PLACEHOLDER_REPLIES.length)];
+  if (!OPENAI_API_KEY) return null;
+  return await generateWithLLM(member, recentMessages, personas);
 }
 
 function scheduleAISimulation(addAIMessage, getRecentMessages) {
@@ -130,7 +106,7 @@ function scheduleAISimulation(addAIMessage, getRecentMessages) {
   if (!members.length) return;
 
   if (!OPENAI_API_KEY) {
-    console.log('未设置 AI_API_KEY（或 OPENAI_API_KEY），群聊将用人设样本/占位句回复。设置后 AI 会按各成员说话方式自主聊天。');
+    console.log('未设置 AI_API_KEY，群聊不会自动发言。请在管理页维护各成员特征/会说的话，并配置 API 后由 AI 按人设生成回复。');
   } else {
     console.log('已接入 AI，群聊将按人设自主发言（模型: ' + OPENAI_MODEL + '）');
   }

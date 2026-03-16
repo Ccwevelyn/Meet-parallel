@@ -15,7 +15,8 @@
   member_9.jpg  → 小可 (Morty)
   member_10.jpg → 石墨烯 (Chen)
   member_11.jpg → 小米康 (Kang)
-  member_12.jpg → Tree (Zhang)
-  member_13.jpg → 烟火° (Bao)
+  member_12.jpg → Tree（张），不要用烟火的照片
+  member_13.jpg → 烟火°（鲍），不要用 Tree 的照片
 
+注意：若 Tree 显示成烟火的头像（或反过来），说明 member_12 与 member_13 两个文件放反了，请对调文件名或对调图片内容后强制刷新页面（Ctrl+F5）。
 放好后重启或刷新网页即可。

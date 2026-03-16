@@ -231,7 +231,7 @@ html, body {
 
 #screen-chat .messages .msg-me {
   align-self: flex-end;
-  flex-direction: row-reverse;
+  flex-direction: row;
   text-align: right;
 }
 #screen-chat .messages .msg-me .msg-content {
@@ -254,6 +254,28 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+/* ---------- 按日期定位聊天 ---------- */
+.date-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--paper);
+  border-bottom: 1px solid var(--border);
+}
+.date-bar label {
+  font-size: 0.9rem;
+  color: var(--ink-light);
+}
+.date-select {
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.9rem;
+  min-width: 8rem;
 }
 
 /* ---------- 登录 ---------- */
@@ -536,9 +558,12 @@ html, body {
   color: var(--paper);
   font-size: 1.5rem;
 }
-.profile-view-box .profile-view-avatar.no-avatar::after {
-  content: '?';
+.profile-view-box .profile-view-avatar .avatar-initial {
+  display: block;
+  line-height: 1;
+  font-family: inherit;
 }
+/* 首字由 .avatar-initial 节点显示，不再用 ::after */
 .profile-view-name {
   text-align: center;
   font-size: 1.1rem;

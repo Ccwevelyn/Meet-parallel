@@ -14,9 +14,8 @@
     <!-- 入口：诗句 -->
     <section id="screen-intro" class="screen active">
       <div class="poem">
-        <p>人与人之间的相遇像是一场盛大的别离，<br>怪缘分尚浅，怪命运不公。</p>
-        <p>倘若在那天，我们说出了不一样的话，<br>做出了不一样的选择，结果是否会有所不同。</p>
-        <p>贪婪地希望缘分是从未靠近的平行线，<br>也好过带着回忆渐行渐远的你我。</p>
+        <p>在平行时空相遇</p>
+        <p>倘若在那天，我们说出了不一样的话，<br>做出了不一样的选择，<br>结果是否会有所不同。</p>
       </div>
       <div id="choice-boxes" class="choice-boxes hidden">
         <a href="#" id="choice-observe" class="choice-box">观</a>
@@ -30,6 +29,12 @@
         <span class="back" id="back-from-observe">←</span>
         <span class="title">观</span>
       </header>
+      <div class="date-bar">
+        <label for="observe-date">按日期：</label>
+        <select id="observe-date" class="date-select">
+          <option value="">全部</option>
+        </select>
+      </div>
       <div id="observe-messages" class="messages"></div>
     </section>
 
@@ -66,6 +71,12 @@
         <span class="edit-profile-btn" id="edit-profile-btn">编辑资料</span>
         <span class="collect-btn" id="collect-btn">采集语气</span>
       </header>
+      <div class="date-bar">
+        <label for="chat-date">按日期：</label>
+        <select id="chat-date" class="date-select">
+          <option value="">全部</option>
+        </select>
+      </div>
       <div id="chat-messages" class="messages"></div>
       <form id="chat-form" class="chat-form">
         <input type="text" id="chat-input" placeholder="输入消息..." maxlength="2000" autocomplete="off">

@@ -23,6 +23,8 @@ app.use('/api/avatar', avatarRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/collect', collectRouter);
 app.use('/api/admin', adminRouter);
+// 未匹配的 /api 请求统一返回 JSON 404，避免前端收到 HTML 导致「响应格式错误」
+app.use('/api', (req, res) => res.status(404).json({ error: '接口不存在' }));
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 app.get('*', (req, res) => {

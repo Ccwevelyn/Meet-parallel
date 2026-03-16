@@ -15,7 +15,13 @@
   }
 
   function apiJson(url, opts) {
-    return fetch(url, opts).then(r => r.json().then(data => ({ ok: r.ok, data, status: r.status })).catch(() => ({ ok: false, data: { error: '响应格式错误' }, status: r.status })));
+    return fetch(url, opts).then(r => {
+      const status = r.status;
+      return r.json().then(data => ({ ok: r.ok, data, status })).catch(() => {
+        if (status === 404) return { ok: false, data: { error: '接口不存在(404)，请确认访问地址与后端已启动' }, status };
+        return { ok: false, data: { error: '登录接口返回异常，请确认后端已启动且地址正确（如部署后请等服务就绪）' }, status };
+      });
+    });
   }
 
   function showModal(modalId, show) {
@@ -55,10 +61,33 @@
     container.appendChild(div);
   }
 
-  function fetchMessages(sinceId, token) {
-    const url = sinceId ? API + '/messages?sinceId=' + sinceId : API + '/messages';
+  function fetchMessages(sinceId, token, date) {
+    const params = new URLSearchParams();
+    if (sinceId) params.set('sinceId', sinceId);
+    if (date) params.set('date', date);
+    const qs = params.toString();
+    const url = API + '/messages' + (qs ? '?' + qs : '');
     const opts = token ? { headers: { Authorization: 'Bearer ' + token } } : {};
     return fetch(url, opts).then(r => r.json());
+  }
+
+  function fetchDates(token) {
+    const opts = token ? { headers: { Authorization: 'Bearer ' + token } } : {};
+    return fetch(API + '/messages/dates', opts).then(r => r.json());
+  }
+
+  function fillDateSelect(selectId, dates) {
+    const el = document.getElementById(selectId);
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = '<option value="">全部</option>';
+    (dates || []).forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d;
+      opt.textContent = d;
+      el.appendChild(opt);
+    });
+    if (cur && dates && dates.includes(cur)) el.value = cur;
   }
 
   function renderMessageList(containerId, list, lastIdRef) {
@@ -87,20 +116,38 @@
   // ——— 观：只读 ———
   let observeTimer = null;
   const observeLastId = { current: 0 };
-  function startObservePolling() {
-    if (observeTimer) clearInterval(observeTimer);
-    fetchMessages().then(data => {
+  let observeDate = '';
+
+  function loadObserveMessages(date) {
+    const lastIdRef = date ? null : observeLastId;
+    fetchMessages(null, null, date || undefined).then(data => {
       const list = data.messages || [];
-      document.getElementById('observe-messages').innerHTML = '';
-      renderMessageList('observe-messages', list, observeLastId);
+      const container = document.getElementById('observe-messages');
+      if (!container) return;
+      container.innerHTML = '';
+      renderMessageList('observe-messages', list, lastIdRef);
     }).catch(() => {});
+  }
+
+  function startObservePolling() {
+    observeDate = '';
+    fillDateSelect('observe-date', []);
+    fetchDates().then(data => fillDateSelect('observe-date', data.dates || [])).catch(() => {});
+    if (observeTimer) clearInterval(observeTimer);
+    loadObserveMessages();
     observeTimer = setInterval(() => {
+      if (observeDate) return;
       fetchMessages(observeLastId.current).then(data => {
         const list = data.messages || [];
         if (list.length) renderMessageList('observe-messages', list, observeLastId);
       }).catch(() => {});
     }, 3000);
   }
+
+  document.getElementById('observe-date')?.addEventListener('change', function () {
+    observeDate = (this.value || '').trim();
+    loadObserveMessages(observeDate || undefined);
+  });
 
   document.getElementById('back-from-observe')?.addEventListener('click', function () {
     if (observeTimer) clearInterval(observeTimer);
@@ -140,6 +187,8 @@
         let msg = data.error || '登录失败';
         if (status === 503 || /未配置|credentials|请先在服务端/.test(msg)) {
           msg = '服务暂时不可用。请确认已在项目目录执行 npm start 启动后端，默认密码 123456，无需单独配置 credentials。';
+        } else if (msg === '密码错误' && username.toLowerCase() === 'admin') {
+          msg = '密码错误。管理员默认密码为 Cc921（可通过环境变量 ADMIN_PASSWORD 修改）';
         }
         showError('login-error', msg);
       }
@@ -149,21 +198,40 @@
 
   // ——— 改：聊天 ———
   const chatLastId = { current: 0 };
-  function startChatPolling() {
-    fetchMessages().then(data => {
+  let chatDate = '';
+  let chatPollTimer = null;
+
+  function loadChatMessages(date) {
+    const token = window._token;
+    const lastIdRef = date ? null : chatLastId;
+    fetchMessages(null, token, date || undefined).then(data => {
       const list = data.messages || [];
-      document.getElementById('chat-messages').innerHTML = '';
-      renderMessageList('chat-messages', list, chatLastId);
-    }).then(() => {
-      setInterval(() => {
-        if (!window._token) return;
-        fetchMessages(chatLastId.current, window._token).then(data => {
-          const list = data.messages || [];
-          if (list.length) renderMessageList('chat-messages', list, chatLastId);
-        }).catch(() => {});
-      }, 2000);
+      const container = document.getElementById('chat-messages');
+      if (!container) return;
+      container.innerHTML = '';
+      renderMessageList('chat-messages', list, lastIdRef);
     }).catch(() => {});
   }
+
+  function startChatPolling() {
+    chatDate = '';
+    fillDateSelect('chat-date', []);
+    fetchDates(window._token).then(data => fillDateSelect('chat-date', data.dates || [])).catch(() => {});
+    loadChatMessages();
+    if (chatPollTimer) clearInterval(chatPollTimer);
+    chatPollTimer = setInterval(() => {
+      if (!window._token || chatDate) return;
+      fetchMessages(chatLastId.current, window._token).then(data => {
+        const list = data.messages || [];
+        if (list.length) renderMessageList('chat-messages', list, chatLastId);
+      }).catch(() => {});
+    }, 2000);
+  }
+
+  document.getElementById('chat-date')?.addEventListener('change', function () {
+    chatDate = (this.value || '').trim();
+    loadChatMessages(chatDate || undefined);
+  });
 
   const chatForm = document.getElementById('chat-form');
   const chatInput = document.getElementById('chat-input');
@@ -214,15 +282,25 @@
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(data => {
         const avatarEl = modal.querySelector('.profile-view-avatar');
-        const url = data.avatarUrl ? data.avatarUrl + '?t=' + Date.now() : '';
-        avatarEl.innerHTML = url ? '<img src="' + url + '" alt="" onerror="this.parentElement.classList.add(\'no-avatar\')">' : '';
-        avatarEl.classList.toggle('no-avatar', !url);
-        setContent(data.displayName || fallbackName, (data.bio && data.bio.trim()) ? data.bio : null);
+        const name = data.displayName || fallbackName || '';
+        const initialChar = (name || '?').trim()[0] || '?';
+        const initial = escapeHtml(initialChar);
+        const avatarUrl = (data.avatarUrl || '').trim();
+        avatarEl.className = 'profile-view-avatar';
+        if (avatarUrl) {
+          avatarEl.innerHTML = '<img src="' + avatarUrl + '?t=' + Date.now() + '" alt="" onerror="var p=this.parentElement;p.classList.add(\'no-avatar\');var s=p.querySelector(\'.avatar-initial\');if(s)s.style.display=\'block\';this.style.display=\'none\'"><span class="avatar-initial" style="display:none" aria-hidden="true">' + initial + '</span>';
+        } else {
+          avatarEl.classList.add('no-avatar');
+          avatarEl.innerHTML = '<span class="avatar-initial" aria-hidden="true">' + initial + '</span>';
+        }
+        setContent(name, (data.bio && data.bio.trim()) ? data.bio : null);
         showModal('profile-view-modal', true);
       })
       .catch(() => {
-        modal.querySelector('.profile-view-avatar').innerHTML = '';
-        modal.querySelector('.profile-view-avatar').classList.add('no-avatar');
+        const avatarEl = modal.querySelector('.profile-view-avatar');
+        const initialChar = (fallbackName || '?').trim()[0] || '?';
+        avatarEl.className = 'profile-view-avatar no-avatar';
+        avatarEl.innerHTML = '<span class="avatar-initial" aria-hidden="true">' + escapeHtml(initialChar) + '</span>';
         setContent(fallbackName, null);
         modal.querySelector('.profile-view-bio').textContent = '加载失败，请稍后再试。';
         showModal('profile-view-modal', true);

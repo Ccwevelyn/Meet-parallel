@@ -11,6 +11,7 @@ const AVATARS_DIR_CWD = path.resolve(process.cwd(), 'public', 'avatars');
 if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
 
 const EXT = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+const DEFAULT_AVATAR = 'default.svg';
 
 function findAvatarPath(id) {
   for (const e of EXT) {
@@ -22,18 +23,31 @@ function findAvatarPath(id) {
   return null;
 }
 
+function getDefaultAvatarPath() {
+  const p1 = path.join(AVATARS_DIR, DEFAULT_AVATAR);
+  if (fs.existsSync(p1)) return p1;
+  const p2 = path.join(AVATARS_DIR_CWD, DEFAULT_AVATAR);
+  return fs.existsSync(p2) ? p2 : null;
+}
+
+function hasAvatarFile(id) {
+  return !!findAvatarPath(id);
+}
+
 router.get('/:memberId', (req, res) => {
   const member = getMemberByIdOrName((req.params.memberId || '').trim());
   if (!member) return res.status(404).end();
-  const filePath = findAvatarPath(member.id);
+  let filePath = findAvatarPath(member.id);
+  if (!filePath) filePath = getDefaultAvatarPath();
   if (filePath) {
     const ext = path.extname(filePath).toLowerCase();
     const mime = ext === '.jpg' || ext === '.jpeg' ? 'jpeg' : (ext === '.svg' ? 'svg+xml' : ext.slice(1));
     res.setHeader('Cache-Control', 'public, max-age=300');
     return res.type('image/' + mime).sendFile(filePath, { maxAge: 300 });
   }
-  // 无头像时返回 404，前端 onerror 会显示占位（灰圈/首字）
-  return res.status(404).end();
+  const EMPTY_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+  res.setHeader('Cache-Control', 'public, max-age=300');
+  return res.type('image/gif').send(EMPTY_GIF);
 });
 
-module.exports = { avatarRouter: router };
+module.exports = { avatarRouter: router, hasAvatarFile };
