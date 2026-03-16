@@ -85,6 +85,35 @@ npm start
 
 然后在浏览器打开 **http://localhost:3000** 即可。无需先配置 `credentials.json`（成员默认密码 123456）。
 
+---
+
+## 部署到 Render
+
+1. **把代码推到 GitHub**（你已推送到 `Ccwevelyn/Meet-parallel`）。
+2. 打开 [Render](https://render.com) → 登录 → **New** → **Web Service**。
+3. **Connect repository**：选 GitHub 里的 `Meet-parallel`，分支选 `main`。
+4. Render 会自动识别 Node：
+   - **Build Command**：`npm install`（默认即可）
+   - **Start Command**：`npm start`（默认即可）
+   - **Plan** 选 Free。
+5. **Environment** 里添加环境变量（按需）：
+
+   | Key | 说明 | 必填 |
+   |-----|------|------|
+   | `LOGIN_CREDENTIALS` | 成员密码 JSON 字符串，见上文「方式二」 | 否，不设则默认 123456 |
+   | `ADMIN_PASSWORD` | 管理员 admin 的密码，默认 `Cc921` | 否 |
+   | `AI_API_KEY` | 接 AI 时的 API 密钥（DeepSeek/智谱等，也兼容 `OPENAI_API_KEY`） | 否 |
+   | `AI_BASE_URL` | 接口地址（如 `https://api.deepseek.com/v1`） | 否 |
+   | `AI_MODEL` | 模型名（如 `deepseek-chat`） | 否 |
+
+   Render 会自动注入 `PORT`，无需自己设。
+
+6. 点 **Create Web Service**，等构建和部署完成，用生成的 **URL**（如 `https://xxx.onrender.com`）访问即可。
+
+**说明**：Render 免费实例的磁盘是临时的，重启或重新部署后 `data/`（人设、采集记录、修改的密码等）会清空，如需持久化可之后用 Render Disk 或数据库。
+
+---
+
 ## 接 AI 自主聊天（让 AI 学各成员说话方式）
 
 要让群聊里的 AI **按每个人的说话方式自主聊天**，需要：
@@ -92,10 +121,10 @@ npm start
 1. **先有人设**：用「采集语气」让成员和页面里的假 AI 聊约 10 分钟，或导入聊天记录，生成 `data/personas.json`（每人有样本句子和活跃时段）。
 2. **配置大模型 API**：
    - 在项目根目录复制 `.env.example` 为 `.env`（或直接新建 `.env`）。
-   - 在 `.env` 里填写 `OPENAI_API_KEY=你的密钥`。若用国内中转或自建，可加 `OPENAI_BASE_URL=...`、`OPENAI_MODEL=...`。
+   - 在 `.env` 里填写 `AI_API_KEY=你的密钥`（或用 `OPENAI_API_KEY`）。若用 DeepSeek/智谱等，加 `AI_BASE_URL=...`、`AI_MODEL=...`。
    - 重启服务（`npm start`）。启动时控制台会显示「已接入 AI，群聊将按人设自主发言」。
 
-之后群聊会每隔约 8–20 秒随机选一位成员，由大模型根据**该成员的人设样本 + 最近对话**生成一条回复，尽量模仿其口吻和用词。未配置 `OPENAI_API_KEY` 时，会用「人设样本随机一句」或占位句，不调用接口。
+之后群聊会每隔约 8–20 秒随机选一位成员，由大模型根据**该成员的人设样本 + 最近对话**生成一条回复，尽量模仿其口吻和用词。未配置 `AI_API_KEY` 时，会用「人设样本随机一句」或占位句，不调用接口。
 
 ## 管理员账号（微调人设）
 
@@ -125,21 +154,21 @@ npm start
 
 ### AI 如何用这些人设（自主聊天）
 
-- **未配置 OPENAI_API_KEY**：从该成员的**人设样本**里随机选一句，或占位句。
-- **已配置 OPENAI_API_KEY**：每次轮到某成员发言时，把**该成员的人设样本 + 最近群聊**发给大模型，按「严格模仿这种说话方式」生成一条回复。
+- **未配置 AI_API_KEY**：从该成员的**人设样本**里随机选一句，或占位句。
+- **已配置 AI_API_KEY**：每次轮到某成员发言时，把**该成员的人设样本 + 最近群聊**发给大模型，按「严格模仿这种说话方式」生成一条回复。
 - **发言时机**：按人设里的「活跃时段」加权。
 
 ### 环境变量（接 AI 时用）
 
 | 变量 | 说明 |
 |------|------|
-| `OPENAI_API_KEY` | **必填**。OpenAI 或兼容 API 的密钥 |
-| `OPENAI_BASE_URL` | 选填。默认 `https://api.openai.com/v1`（国内可用中转） |
-| `OPENAI_MODEL` | 选填。默认 `gpt-3.5-turbo` |
+| `AI_API_KEY` | **必填**。DeepSeek/智谱/OpenAI 等 API 密钥（也兼容 `OPENAI_API_KEY`） |
+| `AI_BASE_URL` | 选填。默认 `https://api.openai.com/v1`（用 DeepSeek 则填 `https://api.deepseek.com/v1`） |
+| `AI_MODEL` | 选填。默认 `gpt-3.5-turbo`（用 DeepSeek 则填 `deepseek-chat`） |
 
 ### 推荐：便宜、好用、兼容本项目的 AI（国内可直连）
 
-本项目使用 **OpenAI 兼容的 Chat Completions 接口**，以下任选一个即可，在 `.env` 里设 `OPENAI_BASE_URL` + `OPENAI_API_KEY` + `OPENAI_MODEL`：
+本项目使用 **OpenAI 兼容的 Chat Completions 接口**，以下任选一个即可，在 `.env` 里设 `AI_BASE_URL` + `AI_API_KEY` + `AI_MODEL`：
 
 | 服务 | 特点 | 大致价格 |
 |------|------|----------|
@@ -150,7 +179,7 @@ npm start
 
 `.env.example` 里已写好上述几家的示例，复制到 `.env` 后改成自己的密钥即可。
 
-在项目根目录建 `.env`（可复制 `.env.example`），填好 `OPENAI_API_KEY` 后重启即可。
+在项目根目录建 `.env`（可复制 `.env.example`），填好 `AI_API_KEY`（及可选 `AI_BASE_URL`、`AI_MODEL`）后重启即可。
 
 ---
 

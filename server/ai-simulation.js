@@ -18,9 +18,10 @@ const PLACEHOLDER_REPLIES = [
   '好吧。'
 ];
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const OPENAI_BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
+// 通用名 AI_*（DeepSeek/智谱等），兼容旧名 OPENAI_*
+const OPENAI_API_KEY = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
+const OPENAI_BASE_URL = process.env.AI_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
+const OPENAI_MODEL = process.env.AI_MODEL || process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
 
 /**
  * 用大模型按人设生成一条回复（学习该成员的说话方式，只输出一句）
@@ -129,7 +130,7 @@ function scheduleAISimulation(addAIMessage, getRecentMessages) {
   if (!members.length) return;
 
   if (!OPENAI_API_KEY) {
-    console.log('未设置 OPENAI_API_KEY，群聊将用人设样本/占位句回复。设置后 AI 会按各成员说话方式自主聊天。');
+    console.log('未设置 AI_API_KEY（或 OPENAI_API_KEY），群聊将用人设样本/占位句回复。设置后 AI 会按各成员说话方式自主聊天。');
   } else {
     console.log('已接入 AI，群聊将按人设自主发言（模型: ' + OPENAI_MODEL + '）');
   }

@@ -12,6 +12,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '1mb' }));
+
+// 健康检查：确认后端已启动（返回 503 时先访问此接口排查）
+app.get('/api/health', (req, res) => res.json({ ok: true, message: '服务运行中' }));
+
 // API 优先，避免被 static 或后续 * 拦截
 app.use('/api/auth', authRouter);
 app.use('/api/messages', messagesRouter);
