@@ -476,6 +476,23 @@ html, body {
   color: var(--ink-light);
   margin-bottom: 1rem;
 }
+.admin-clear-btn {
+  margin-bottom: 1rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid #b44;
+  background: var(--paper);
+  color: #a33;
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.admin-clear-btn:hover {
+  background: #f8e8e8;
+}
+.admin-clear-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .admin-personas {
   display: flex;
   flex-direction: column;

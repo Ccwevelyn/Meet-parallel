@@ -5,6 +5,7 @@ const express = require('express');
 const { requireAuth, requireAdmin } = require('./auth');
 const { getAllMembers } = require('./members');
 const { loadPersonas, updatePersona } = require('./personas');
+const { messagesClearAll } = require('./db');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -38,6 +39,16 @@ router.put('/personas', (req, res) => {
     return res.json({ ok: true, persona: updated });
   } catch (e) {
     return res.status(500).json({ error: e.message || '更新失败' });
+  }
+});
+
+// POST 一键清空所有聊天记录（仅 messages 表，人设/采集等不动）
+router.post('/messages/clear', (req, res) => {
+  try {
+    const deleted = messagesClearAll();
+    return res.json({ ok: true, deleted });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || '清空失败' });
   }
 });
 

@@ -132,14 +132,20 @@ async function generateReply(member, recentMessages, personas, options = {}) {
   return await generateWithLLM(member, recentMessages, personas, options);
 }
 
+/** 真人回复窗口：10 秒内必须有人接话，失败则重试 */
+const HUMAN_REPLY_DEADLINE_MS = 10000;
+const HUMAN_REPLY_FIRST_DELAY_MS = 2000 + Math.random() * 3000;
+const HUMAN_REPLY_RETRY_MS = 2500;
+
 /**
- * 真人发言后 3–6 秒内安排一名 AI 成员对其回复；选人时优先「在群里回复多」且「常回复该真人」的成员
+ * 真人发言后 10 秒内安排一名 AI 成员对其回复；若首次未成功则重试，保证真人必有回复
  */
 function scheduleOneReplySoon(addAIMessage, getRecentMessages, getOccupiedMemberIds) {
-  const delay = 3000 + Math.random() * 3000;
-  setTimeout(async () => {
+  const startTime = Date.now();
+
+  async function attempt() {
     const members = getAllMembers();
-    if (!members.length) return;
+    if (!members.length) return false;
     const recent = typeof getRecentMessages === 'function' ? getRecentMessages(24) : [];
     const lastMsg = recent.length ? recent[recent.length - 1] : null;
     let replyToMemberName = null;
@@ -154,10 +160,22 @@ function scheduleOneReplySoon(addAIMessage, getRecentMessages, getOccupiedMember
     } catch (_) {}
     const occupied = typeof getOccupiedMemberIds === 'function' ? getOccupiedMemberIds() : [];
     const member = pickMember(members, personas, occupied, { replyToMemberName });
-    if (!member) return;
+    if (!member) return false;
     const text = await generateReply(member, recent, personas, { replyToHuman: true });
-    if (text) addAIMessage(member.id, text);
-  }, delay);
+    if (text) {
+      addAIMessage(member.id, text);
+      return true;
+    }
+    return false;
+  }
+
+  function schedule() {
+    if (Date.now() - startTime > HUMAN_REPLY_DEADLINE_MS) return;
+    attempt().then(sent => {
+      if (!sent) setTimeout(schedule, HUMAN_REPLY_RETRY_MS);
+    });
+  }
+  setTimeout(schedule, HUMAN_REPLY_FIRST_DELAY_MS);
 }
 
 function scheduleAISimulation(addAIMessage, getRecentMessages, getOccupiedMemberIds) {

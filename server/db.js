@@ -38,8 +38,16 @@ function getDb() {
       sample_messages TEXT,
       active_hours TEXT,
       reply_habits TEXT,
+      persona_summary TEXT,
+      reply_to_whom TEXT,
+      reply_rate REAL,
       updated_at TEXT
     );
+  `);
+  try { d.exec('ALTER TABLE personas ADD COLUMN persona_summary TEXT'); } catch (_) {}
+  try { d.exec('ALTER TABLE personas ADD COLUMN reply_to_whom TEXT'); } catch (_) {}
+  try { d.exec('ALTER TABLE personas ADD COLUMN reply_rate REAL'); } catch (_) {}
+  d.exec(`
     CREATE TABLE IF NOT EXISTS chat_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       sender TEXT NOT NULL,
@@ -96,10 +104,10 @@ function migrateFromJsonIfNeeded() {
       try {
         const personas = JSON.parse(fs.readFileSync(pPath, 'utf8'));
         if (personas && typeof personas === 'object') {
-          const stmt = d.prepare('INSERT OR REPLACE INTO personas (name, message_count, sample_messages, active_hours, reply_habits, updated_at) VALUES (?, ?, ?, ?, ?, ?)');
+          const stmt = d.prepare('INSERT OR REPLACE INTO personas (name, message_count, sample_messages, active_hours, reply_habits, persona_summary, reply_to_whom, reply_rate, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
           const run = d.transaction(() => {
             for (const [name, p] of Object.entries(personas)) {
-              stmt.run(name, p.messageCount ?? 0, JSON.stringify(p.sampleMessages || []), JSON.stringify(p.activeHours || []), (p.replyHabits || '').slice(0, 500), p.updatedAt || null);
+              stmt.run(name, p.messageCount ?? 0, JSON.stringify(p.sampleMessages || []), JSON.stringify(p.activeHours || []), (p.replyHabits || '').slice(0, 500), (p.personaSummary || '').slice(0, 2000), JSON.stringify(p.replyToWhom || {}), p.replyRate != null ? p.replyRate : 0, p.updatedAt || null);
             }
           });
           run();
@@ -160,9 +168,14 @@ function messagesQuery(options = {}) {
   return rows.map(r => ({ ...r, isHuman: !!r.isHuman }));
 }
 
+function messagesClearAll() {
+  const info = getDb().prepare('DELETE FROM messages').run();
+  return info.changes;
+}
+
 // ---------- personas ----------
 function personasLoadAll() {
-  const rows = getDb().prepare('SELECT name, message_count AS messageCount, sample_messages AS sampleMessages, active_hours AS activeHours, reply_habits AS replyHabits, updated_at AS updatedAt FROM personas').all();
+  const rows = getDb().prepare('SELECT name, message_count AS messageCount, sample_messages AS sampleMessages, active_hours AS activeHours, reply_habits AS replyHabits, persona_summary AS personaSummary, reply_to_whom AS replyToWhom, reply_rate AS replyRate, updated_at AS updatedAt FROM personas').all();
   const out = {};
   for (const r of rows) {
     out[r.name] = {
@@ -171,6 +184,9 @@ function personasLoadAll() {
       sampleMessages: r.sampleMessages ? JSON.parse(r.sampleMessages) : [],
       activeHours: r.activeHours ? JSON.parse(r.activeHours) : [],
       replyHabits: r.replyHabits || '',
+      personaSummary: r.personaSummary || '',
+      replyToWhom: r.replyToWhom ? (typeof r.replyToWhom === 'string' ? JSON.parse(r.replyToWhom) : r.replyToWhom) : {},
+      replyRate: r.replyRate != null ? Number(r.replyRate) : 0,
       updatedAt: r.updatedAt || null
     };
   }
@@ -179,7 +195,7 @@ function personasLoadAll() {
 
 function personasSaveAll(personas) {
   const stmt = getDb().prepare(
-    'INSERT OR REPLACE INTO personas (name, message_count, sample_messages, active_hours, reply_habits, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+    'INSERT OR REPLACE INTO personas (name, message_count, sample_messages, active_hours, reply_habits, persona_summary, reply_to_whom, reply_rate, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const run = getDb().transaction(() => {
     for (const [name, p] of Object.entries(personas)) {
@@ -189,6 +205,9 @@ function personasSaveAll(personas) {
         JSON.stringify(p.sampleMessages || []),
         JSON.stringify(p.activeHours || []),
         (p.replyHabits || '').slice(0, 500),
+        (p.personaSummary || '').slice(0, 2000),
+        JSON.stringify(p.replyToWhom || {}),
+        p.replyRate != null ? p.replyRate : 0,
         p.updatedAt || new Date().toISOString()
       );
     }
@@ -198,13 +217,16 @@ function personasSaveAll(personas) {
 
 function personasSaveOne(name, p) {
   getDb().prepare(
-    'INSERT OR REPLACE INTO personas (name, message_count, sample_messages, active_hours, reply_habits, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+    'INSERT OR REPLACE INTO personas (name, message_count, sample_messages, active_hours, reply_habits, persona_summary, reply_to_whom, reply_rate, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     name,
     p.messageCount ?? 0,
     JSON.stringify(p.sampleMessages || []),
     JSON.stringify(p.activeHours || []),
     (p.replyHabits || '').slice(0, 500),
+    (p.personaSummary || '').slice(0, 2000),
+    JSON.stringify(p.replyToWhom || {}),
+    p.replyRate != null ? p.replyRate : 0,
     p.updatedAt || new Date().toISOString()
   );
 }
@@ -283,6 +305,7 @@ module.exports = {
   messagesGetRecent,
   messagesGetDates,
   messagesQuery,
+  messagesClearAll,
   personasLoadAll,
   personasSaveAll,
   personasSaveOne,

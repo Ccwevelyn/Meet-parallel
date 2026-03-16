@@ -618,4 +618,22 @@
     window._role = null;
     showScreen('screen-intro');
   });
+
+  document.getElementById('admin-clear-messages-btn')?.addEventListener('click', function () {
+    if (!window._token) return;
+    if (!confirm('确定要清空所有聊天记录吗？此操作不可恢复。')) return;
+    var btn = this;
+    btn.disabled = true;
+    fetch(API + '/admin/messages/clear', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + window._token }
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.ok) alert('已清空 ' + (data.deleted || 0) + ' 条聊天记录。');
+        else alert(data.error || '清空失败');
+      })
+      .catch(function () { alert('请求失败'); })
+      .finally(function () { btn.disabled = false; });
+  });
 })();
