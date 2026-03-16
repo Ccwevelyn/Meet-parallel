@@ -30,14 +30,22 @@ function getDefaultAvatarPath() {
   return fs.existsSync(p2) ? p2 : null;
 }
 
+// Tree(member_12) 与 烟火(member_13) 头像文件若放反，在此互换显示
+const AVATAR_SWAP = { member_12: 'member_13', member_13: 'member_12' };
+
+function resolveAvatarId(id) {
+  return AVATAR_SWAP[id] || id;
+}
+
 function hasAvatarFile(id) {
-  return !!findAvatarPath(id);
+  return !!findAvatarPath(resolveAvatarId(id));
 }
 
 router.get('/:memberId', (req, res) => {
   const member = getMemberByIdOrName((req.params.memberId || '').trim());
   if (!member) return res.status(404).end();
-  let filePath = findAvatarPath(member.id);
+  const fileId = resolveAvatarId(member.id);
+  let filePath = findAvatarPath(fileId);
   if (!filePath) filePath = getDefaultAvatarPath();
   if (filePath) {
     const ext = path.extname(filePath).toLowerCase();

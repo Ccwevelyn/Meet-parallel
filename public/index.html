@@ -14,8 +14,8 @@
     <!-- 入口：诗句 -->
     <section id="screen-intro" class="screen active">
       <div class="poem">
-        <p>在平行时空相遇</p>
-        <p>倘若在那天，我们说出了不一样的话，<br>做出了不一样的选择，<br>结果是否会有所不同。</p>
+        <p>《在平行时空相遇》</p>
+        <p>倘若在那天，<br>我们说出了不一样的话，<br>做出了不一样的选择，<br>结果是否会有所不同。</p>
       </div>
       <div id="choice-boxes" class="choice-boxes hidden">
         <a href="#" id="choice-observe" class="choice-box">观</a>
@@ -29,11 +29,17 @@
         <span class="back" id="back-from-observe">←</span>
         <span class="title">观</span>
       </header>
-      <div class="date-bar">
-        <label for="observe-date">按日期：</label>
-        <select id="observe-date" class="date-select">
-          <option value="">全部</option>
-        </select>
+      <div class="filter-bar">
+        <span class="filter-group">
+          <label for="observe-date">按日期</label>
+          <input type="date" id="observe-date" class="date-picker">
+        </span>
+        <span class="filter-group">
+          <label for="observe-member">按成员</label>
+          <select id="observe-member" class="member-select">
+            <option value="">全部</option>
+          </select>
+        </span>
       </div>
       <div id="observe-messages" class="messages"></div>
     </section>
@@ -71,11 +77,17 @@
         <span class="edit-profile-btn" id="edit-profile-btn">编辑资料</span>
         <span class="collect-btn" id="collect-btn">采集语气</span>
       </header>
-      <div class="date-bar">
-        <label for="chat-date">按日期：</label>
-        <select id="chat-date" class="date-select">
-          <option value="">全部</option>
-        </select>
+      <div class="filter-bar">
+        <span class="filter-group">
+          <label for="chat-date">按日期</label>
+          <input type="date" id="chat-date" class="date-picker">
+        </span>
+        <span class="filter-group">
+          <label for="chat-member">按成员</label>
+          <select id="chat-member" class="member-select">
+            <option value="">全部</option>
+          </select>
+        </span>
       </div>
       <div id="chat-messages" class="messages"></div>
       <form id="chat-form" class="chat-form">

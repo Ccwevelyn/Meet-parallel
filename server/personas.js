@@ -140,13 +140,16 @@ function mergeCollectedIntoPersonas(options = {}) {
 function updatePersona(name, patch) {
   const personas = loadPersonas();
   if (!personas[name]) {
-    personas[name] = { name, messageCount: 0, sampleMessages: [], activeHours: [], updatedAt: new Date().toISOString() };
+    personas[name] = { name, messageCount: 0, sampleMessages: [], activeHours: [], replyHabits: '', updatedAt: new Date().toISOString() };
   }
   if (Array.isArray(patch.activeHours)) {
     personas[name].activeHours = patch.activeHours.filter(h => Number.isInteger(h) && h >= 0 && h <= 23);
   }
   if (Array.isArray(patch.sampleMessages)) {
     personas[name].sampleMessages = patch.sampleMessages.filter(t => typeof t === 'string').slice(0, 200);
+  }
+  if (patch.replyHabits !== undefined) {
+    personas[name].replyHabits = String(patch.replyHabits).trim().slice(0, 500);
   }
   if (patch.messageCount != null && Number.isInteger(patch.messageCount)) {
     personas[name].messageCount = Math.max(0, patch.messageCount);

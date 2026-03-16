@@ -61,10 +61,11 @@
     container.appendChild(div);
   }
 
-  function fetchMessages(sinceId, token, date) {
+  function fetchMessages(sinceId, token, date, memberId) {
     const params = new URLSearchParams();
     if (sinceId) params.set('sinceId', sinceId);
     if (date) params.set('date', date);
+    if (memberId) params.set('memberId', memberId);
     const qs = params.toString();
     const url = API + '/messages' + (qs ? '?' + qs : '');
     const opts = token ? { headers: { Authorization: 'Bearer ' + token } } : {};
@@ -76,18 +77,22 @@
     return fetch(API + '/messages/dates', opts).then(r => r.json());
   }
 
-  function fillDateSelect(selectId, dates) {
+  function fetchMembers() {
+    return fetch(API + '/auth/members').then(r => r.json());
+  }
+
+  function fillMemberSelect(selectId, members) {
     const el = document.getElementById(selectId);
     if (!el) return;
     const cur = el.value;
     el.innerHTML = '<option value="">全部</option>';
-    (dates || []).forEach(d => {
+    (members || []).forEach(m => {
       const opt = document.createElement('option');
-      opt.value = d;
-      opt.textContent = d;
+      opt.value = m.id;
+      opt.textContent = m.displayName || m.name;
       el.appendChild(opt);
     });
-    if (cur && dates && dates.includes(cur)) el.value = cur;
+    if (cur) el.value = cur;
   }
 
   function renderMessageList(containerId, list, lastIdRef) {
@@ -116,11 +121,22 @@
   // ——— 观：只读 ———
   let observeTimer = null;
   const observeLastId = { current: 0 };
-  let observeDate = '';
 
-  function loadObserveMessages(date) {
-    const lastIdRef = date ? null : observeLastId;
-    fetchMessages(null, null, date || undefined).then(data => {
+  function getObserveFilters() {
+    const dateEl = document.getElementById('observe-date');
+    const memberEl = document.getElementById('observe-member');
+    return { date: (dateEl && dateEl.value) ? dateEl.value.trim() : '', memberId: (memberEl && memberEl.value) ? memberEl.value.trim() : '' };
+  }
+
+  function hasObserveFilter() {
+    const f = getObserveFilters();
+    return !!(f.date || f.memberId);
+  }
+
+  function loadObserveMessages(date, memberId) {
+    const filtered = !!(date || memberId);
+    const lastIdRef = filtered ? null : observeLastId;
+    fetchMessages(null, null, date || undefined, memberId || undefined).then(data => {
       const list = data.messages || [];
       const container = document.getElementById('observe-messages');
       if (!container) return;
@@ -130,13 +146,13 @@
   }
 
   function startObservePolling() {
-    observeDate = '';
-    fillDateSelect('observe-date', []);
-    fetchDates().then(data => fillDateSelect('observe-date', data.dates || [])).catch(() => {});
+    const dateEl = document.getElementById('observe-date');
+    if (dateEl) dateEl.value = '';
+    fetchMembers().then(fillMemberSelect.bind(null, 'observe-member')).catch(() => {});
     if (observeTimer) clearInterval(observeTimer);
     loadObserveMessages();
     observeTimer = setInterval(() => {
-      if (observeDate) return;
+      if (hasObserveFilter()) return;
       fetchMessages(observeLastId.current).then(data => {
         const list = data.messages || [];
         if (list.length) renderMessageList('observe-messages', list, observeLastId);
@@ -145,8 +161,12 @@
   }
 
   document.getElementById('observe-date')?.addEventListener('change', function () {
-    observeDate = (this.value || '').trim();
-    loadObserveMessages(observeDate || undefined);
+    const f = getObserveFilters();
+    loadObserveMessages(f.date || undefined, f.memberId || undefined);
+  });
+  document.getElementById('observe-member')?.addEventListener('change', function () {
+    const f = getObserveFilters();
+    loadObserveMessages(f.date || undefined, f.memberId || undefined);
   });
 
   document.getElementById('back-from-observe')?.addEventListener('click', function () {
@@ -182,6 +202,9 @@
           const titleEl = document.getElementById('my-identity');
           if (titleEl) titleEl.textContent = data.member?.displayName || data.member?.name || '';
           startChatPolling();
+          reportPresence();
+          if (window._presenceTimer) clearInterval(window._presenceTimer);
+          window._presenceTimer = setInterval(reportPresence, 2 * 60 * 1000);
         }
       } else {
         let msg = data.error || '登录失败';
@@ -198,13 +221,24 @@
 
   // ——— 改：聊天 ———
   const chatLastId = { current: 0 };
-  let chatDate = '';
   let chatPollTimer = null;
 
-  function loadChatMessages(date) {
+  function getChatFilters() {
+    const dateEl = document.getElementById('chat-date');
+    const memberEl = document.getElementById('chat-member');
+    return { date: (dateEl && dateEl.value) ? dateEl.value.trim() : '', memberId: (memberEl && memberEl.value) ? memberEl.value.trim() : '' };
+  }
+
+  function hasChatFilter() {
+    const f = getChatFilters();
+    return !!(f.date || f.memberId);
+  }
+
+  function loadChatMessages(date, memberId) {
     const token = window._token;
-    const lastIdRef = date ? null : chatLastId;
-    fetchMessages(null, token, date || undefined).then(data => {
+    const filtered = !!(date || memberId);
+    const lastIdRef = filtered ? null : chatLastId;
+    fetchMessages(null, token, date || undefined, memberId || undefined).then(data => {
       const list = data.messages || [];
       const container = document.getElementById('chat-messages');
       if (!container) return;
@@ -214,13 +248,13 @@
   }
 
   function startChatPolling() {
-    chatDate = '';
-    fillDateSelect('chat-date', []);
-    fetchDates(window._token).then(data => fillDateSelect('chat-date', data.dates || [])).catch(() => {});
+    const dateEl = document.getElementById('chat-date');
+    if (dateEl) dateEl.value = '';
+    fetchMembers().then(fillMemberSelect.bind(null, 'chat-member')).catch(() => {});
     loadChatMessages();
     if (chatPollTimer) clearInterval(chatPollTimer);
     chatPollTimer = setInterval(() => {
-      if (!window._token || chatDate) return;
+      if (!window._token || hasChatFilter()) return;
       fetchMessages(chatLastId.current, window._token).then(data => {
         const list = data.messages || [];
         if (list.length) renderMessageList('chat-messages', list, chatLastId);
@@ -229,8 +263,12 @@
   }
 
   document.getElementById('chat-date')?.addEventListener('change', function () {
-    chatDate = (this.value || '').trim();
-    loadChatMessages(chatDate || undefined);
+    const f = getChatFilters();
+    loadChatMessages(f.date || undefined, f.memberId || undefined);
+  });
+  document.getElementById('chat-member')?.addEventListener('change', function () {
+    const f = getChatFilters();
+    loadChatMessages(f.date || undefined, f.memberId || undefined);
   });
 
   const chatForm = document.getElementById('chat-form');
@@ -256,7 +294,18 @@
       })
       .catch(() => {});
   });
+  function reportPresence() {
+    if (!window._token || !window._member || window._member.id === 'admin') return;
+    fetch(API + '/presence', { method: 'POST', headers: { Authorization: 'Bearer ' + window._token } }).catch(() => {});
+  }
+  function clearPresence() {
+    if (window._presenceTimer) { clearInterval(window._presenceTimer); window._presenceTimer = null; }
+    if (window._token) {
+      fetch(API + '/presence', { method: 'DELETE', headers: { Authorization: 'Bearer ' + window._token } }).catch(() => {});
+    }
+  }
   document.getElementById('back-from-chat')?.addEventListener('click', function () {
+    clearPresence();
     window._token = null;
     window._member = null;
     showScreen('screen-intro');
@@ -524,6 +573,7 @@
         container.innerHTML = list.map(function (p) {
           const hoursStr = (p.activeHours || []).join(', ');
           const samplesCount = (p.sampleMessages || []).length;
+          const habits = escapeHtml(p.replyHabits || '');
           return '<div class="admin-persona" data-name="' + escapeHtml(p.name) + '">' +
             '<div class="admin-persona-head">' +
               '<span class="admin-persona-name">' + escapeHtml(p.displayName || p.name) + '</span>' +
@@ -531,6 +581,8 @@
             '</div>' +
             '<label>活跃时段（0–23 点，逗号分隔）</label>' +
             '<input type="text" class="admin-hours" value="' + escapeHtml(hoursStr) + '" placeholder="如 9,10,14,20,21">' +
+            '<label>回复习惯（会喂给 AI，如：喜欢用哈哈哈结尾、爱发表情包）</label>' +
+            '<textarea class="admin-habits" rows="2" placeholder="选填，描述该成员说话习惯">' + habits + '</textarea>' +
             '<p class="admin-meta">样本消息 ' + samplesCount + ' 条</p>' +
             '<button type="button" class="admin-save-btn">保存</button>' +
             '</div>';
@@ -540,12 +592,14 @@
             const card = btn.closest('.admin-persona');
             const name = card.getAttribute('data-name');
             const hoursInput = card.querySelector('.admin-hours');
+            const habitsInput = card.querySelector('.admin-habits');
             const raw = (hoursInput.value || '').trim();
             const activeHours = raw ? raw.split(/[\s,，]+/).map(function (h) { const n = parseInt(h, 10); return isNaN(n) ? null : n; }).filter(function (n) { return n != null && n >= 0 && n <= 23; }) : [];
+            const replyHabits = habitsInput ? (habitsInput.value || '').trim() : '';
             fetch(API + '/admin/personas', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + window._token },
-              body: JSON.stringify({ name: name, activeHours: activeHours })
+              body: JSON.stringify({ name: name, activeHours: activeHours, replyHabits: replyHabits })
             })
               .then(r => r.json())
               .then(function (res) {

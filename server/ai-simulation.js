@@ -7,22 +7,22 @@ const OPENAI_BASE_URL = process.env.AI_BASE_URL || process.env.OPENAI_BASE_URL |
 const OPENAI_MODEL = process.env.AI_MODEL || process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
 
 /**
- * 用大模型按人设生成一条回复（学习该成员的说话方式，只输出一句）
+ * 用大模型按人设生成一条回复（仅对有人设样本的成员调用；无样本则不发言）
  */
 async function generateWithLLM(member, recentMessages, personas) {
   if (!OPENAI_API_KEY) return null;
   const persona = personas[member.name];
+  if (!persona || !persona.sampleMessages || persona.sampleMessages.length === 0) return null;
   const displayName = member.displayName || member.name;
+  const samples = persona.sampleMessages.slice(-20).join('\n');
   const systemParts = [
     '你是一个群聊里的成员，正在用「自己的口吻」回复。',
     '规则：只输出一条简短的口语消息（一行），不要加引号、不要解释、不要写「我说：」等前缀。',
-    `身份：你在群里的称呼是「${displayName}」（英文名 ${member.name}）。请用这个人的语气和用词习惯来回复。`
+    `身份：你在群里的称呼是「${displayName}」（英文名 ${member.name}）。请用这个人的语气和用词习惯来回复。`,
+    '下面是你平时在群里的真实发言，请严格模仿这种说话方式（用词、语气、长度）：\n' + samples
   ];
-  if (persona && persona.sampleMessages && persona.sampleMessages.length > 0) {
-    const samples = persona.sampleMessages.slice(-20).join('\n');
-    systemParts.push('下面是你平时在群里的真实发言，请严格模仿这种说话方式（用词、语气、长度）：\n' + samples);
-  } else {
-    systemParts.push('暂无历史发言样本，请用自然、简短的口语回复。');
+  if (persona.replyHabits && persona.replyHabits.trim()) {
+    systemParts.push('回复习惯（请自然融入）：' + persona.replyHabits.trim());
   }
   const recent = recentMessages
     .slice(-14)
@@ -68,13 +68,21 @@ async function generateWithLLM(member, recentMessages, personas) {
 }
 
 /**
- * 选择本次发言的成员：有人设时可按活跃时段加权
+ * 只从「经过语气训练」的成员里选人（人设里至少有一条样本消息），有人设时按活跃时段加权。
+ * 排除当前被真人占用的成员（已登录用户在代该成员发言，不共存）。
  */
-function pickMember(members, personas) {
+function pickMember(members, personas, getOccupiedMemberIds) {
+  const occupied = Array.isArray(getOccupiedMemberIds) ? getOccupiedMemberIds : (typeof getOccupiedMemberIds === 'function' ? getOccupiedMemberIds() : []);
+  const trained = members.filter(m => {
+    if (occupied.indexOf(m.id) !== -1) return false;
+    const p = personas[m.name];
+    return p && Array.isArray(p.sampleMessages) && p.sampleMessages.length > 0;
+  });
+  if (!trained.length) return null;
+
   const now = new Date();
   const hour = (now.getHours() + 8) % 24;
-
-  const withWeight = members.map(m => {
+  const withWeight = trained.map(m => {
     const p = personas[m.name];
     let w = 1;
     if (p && p.activeHours && p.activeHours.length > 0) {
@@ -101,14 +109,14 @@ async function generateReply(member, recentMessages, personas) {
   return await generateWithLLM(member, recentMessages, personas);
 }
 
-function scheduleAISimulation(addAIMessage, getRecentMessages) {
+function scheduleAISimulation(addAIMessage, getRecentMessages, getOccupiedMemberIds) {
   const members = getAllMembers();
   if (!members.length) return;
 
   if (!OPENAI_API_KEY) {
-    console.log('未设置 AI_API_KEY，群聊不会自动发言。请在管理页维护各成员特征/会说的话，并配置 API 后由 AI 按人设生成回复。');
+    console.log('未设置 AI_API_KEY，群聊不会自动发言。请先做「采集语气」或管理页维护人设样本，并配置 API。');
   } else {
-    console.log('已接入 AI，群聊将按人设自主发言（模型: ' + OPENAI_MODEL + '）');
+    console.log('已接入 AI，仅经过语气训练（有人设样本）的成员会在群聊中自动发言（模型: ' + OPENAI_MODEL + '）；已登录成员由真人发言，AI 不代发。');
   }
 
   async function sendOne() {
@@ -116,7 +124,9 @@ function scheduleAISimulation(addAIMessage, getRecentMessages) {
     try {
       personas = loadPersonas();
     } catch (_) {}
-    const member = pickMember(members, personas);
+    const occupied = typeof getOccupiedMemberIds === 'function' ? getOccupiedMemberIds() : [];
+    const member = pickMember(members, personas, occupied);
+    if (!member) return;
     const recent = typeof getRecentMessages === 'function' ? getRecentMessages(24) : [];
     const text = await generateReply(member, recent, personas);
     if (text) addAIMessage(member.id, text);

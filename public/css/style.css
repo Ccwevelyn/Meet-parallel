@@ -53,7 +53,7 @@ html, body {
 .poem {
   max-width: 28em;
   margin: 0 auto 3rem;
-  font-family: "Long Cang", "Ma Shan Zheng", "ZCOOL XiaoWei", "FangSong", "仿宋", "STFangsong", serif;
+  font-family: var(--font-serif);
 }
 
 .poem p {
@@ -256,27 +256,35 @@ html, body {
   gap: 0.75rem;
 }
 
-/* ---------- 按日期定位聊天 ---------- */
-.date-bar {
+/* ---------- 按日期 / 按成员 筛选聊天 ---------- */
+.filter-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 1rem;
   padding: 0.5rem 0.75rem;
   background: var(--paper);
   border-bottom: 1px solid var(--border);
 }
-.date-bar label {
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.filter-group label {
   font-size: 0.9rem;
   color: var(--ink-light);
 }
-.date-select {
+.date-picker,
+.member-select {
   padding: 0.35rem 0.6rem;
   border: 1px solid var(--border);
   background: var(--paper);
   color: var(--ink);
   font-size: 0.9rem;
-  min-width: 8rem;
 }
+.date-picker { min-width: 10rem; }
+.member-select { min-width: 8rem; max-width: 12rem; }
 
 /* ---------- 登录 ---------- */
 .login-form {
@@ -478,6 +486,16 @@ html, body {
   border: 1px solid var(--border);
   background: var(--bg);
   font-family: var(--font-serif);
+}
+.admin-persona .admin-habits {
+  width: 100%;
+  max-width: 28rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  resize: vertical;
 }
 .admin-meta {
   font-size: 0.85rem;

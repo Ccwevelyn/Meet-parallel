@@ -22,15 +22,16 @@ router.get('/personas', (req, res) => {
   return res.json({ personas: list });
 });
 
-// PUT 更新某人设（body: { name, activeHours?, sampleMessages? }）
+// PUT 更新某人设（body: { name, activeHours?, sampleMessages?, replyHabits? }）
 router.put('/personas', (req, res) => {
-  const { name, activeHours, sampleMessages, messageCount } = req.body || {};
+  const { name, activeHours, sampleMessages, messageCount, replyHabits } = req.body || {};
   if (!name || typeof name !== 'string') {
     return res.status(400).json({ error: '请提供 name（成员英文名）' });
   }
   const patch = {};
   if (Array.isArray(activeHours)) patch.activeHours = activeHours;
   if (Array.isArray(sampleMessages)) patch.sampleMessages = sampleMessages;
+  if (replyHabits !== undefined) patch.replyHabits = replyHabits;
   if (messageCount != null) patch.messageCount = messageCount;
   try {
     const updated = updatePersona(name.trim(), patch);

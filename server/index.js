@@ -7,6 +7,7 @@ const { avatarRouter } = require('./avatar');
 const { profileRouter } = require('./profile');
 const { collectRouter } = require('./collect');
 const { adminRouter } = require('./admin');
+const { presenceRouter } = require('./presence');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,6 +24,7 @@ app.use('/api/avatar', avatarRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/collect', collectRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/presence', presenceRouter);
 // 未匹配的 /api 请求统一返回 JSON 404，避免前端收到 HTML 导致「响应格式错误」
 app.use('/api', (req, res) => res.status(404).json({ error: '接口不存在' }));
 

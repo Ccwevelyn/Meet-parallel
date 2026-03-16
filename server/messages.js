@@ -66,12 +66,11 @@ router.get('/dates', (req, res) => {
 router.get('/', (req, res) => {
   const sinceId = parseInt(req.query.sinceId, 10);
   const date = (req.query.date || '').trim();
+  const memberId = (req.query.memberId || '').trim();
   let list = messages;
-  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    list = list.filter(m => getDateStr(m.time) === date);
-  } else if (sinceId) {
-    list = list.filter(m => m.id > sinceId);
-  }
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) list = list.filter(m => getDateStr(m.time) === date);
+  if (memberId) list = list.filter(m => m.memberId === memberId);
+  if (!date && !memberId && sinceId) list = list.filter(m => m.id > sinceId);
   res.json({ messages: withDisplayNames(list) });
 });
 
@@ -113,8 +112,9 @@ function getRecentMessages(limit = 20) {
   return messages.slice(-limit);
 }
 
-// 传入 addAIMessage 与 getRecentMessages，由 ai-simulation 根据人设/训练结果生成回复
+// 传入 addAIMessage、getRecentMessages 与 getOccupiedMemberIds（已登录成员不代发）
 const { scheduleAISimulation } = require('./ai-simulation');
-scheduleAISimulation(addAIMessage, getRecentMessages);
+const { getOccupiedMemberIds } = require('./presence');
+scheduleAISimulation(addAIMessage, getRecentMessages, getOccupiedMemberIds);
 
 module.exports = { messagesRouter: router };
