@@ -1,6 +1,7 @@
 try { require('dotenv').config(); } catch (_) {}
 const path = require('path');
 const express = require('express');
+const { getDataDir } = require('./data-path');
 const { authRouter } = require('./auth');
 const { messagesRouter } = require('./messages');
 const { avatarRouter } = require('./avatar');
@@ -41,6 +42,8 @@ app.use((err, req, res, next) => {
 
 const server = app.listen(PORT, () => {
   console.log(`在平行时空再见 · 运行于 http://localhost:${PORT}`);
+  const dataDir = getDataDir();
+  if (process.env.DATA_DIR) console.log('数据目录（持久化）:', dataDir);
 });
 server.on('error', (err) => {
   console.error('服务启动错误', err.message || err);

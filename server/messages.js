@@ -4,16 +4,16 @@ const express = require('express');
 const { requireAuth } = require('./auth');
 const { getDisplayName } = require('./members');
 const { appendChatMessageToPersona } = require('./personas');
+const { getDataPath, ensureDataDir } = require('./data-path');
 
 const router = express.Router();
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const MESSAGES_FILE = path.join(DATA_DIR, 'messages.json');
+const MESSAGES_FILE = getDataPath('messages.json');
 
 let messages = [];
 let nextId = 1;
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+function ensureMessagesDir() {
+  ensureDataDir();
 }
 
 function loadMessages() {
@@ -32,7 +32,7 @@ function loadMessages() {
 
 function saveMessages() {
   try {
-    ensureDataDir();
+    ensureMessagesDir();
     fs.writeFileSync(MESSAGES_FILE, JSON.stringify({ messages, nextId, updatedAt: new Date().toISOString() }, null, 2), 'utf8');
   } catch (e) {
     console.warn('保存 messages.json 失败', e.message);

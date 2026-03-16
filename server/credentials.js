@@ -1,8 +1,9 @@
 const path = require('path');
 const fs = require('fs');
 const { getAllMembers } = require('./members');
+const { getDataPath, ensureDataDir } = require('./data-path');
 
-const PASSWORDS_FILE = path.join(__dirname, '..', 'data', 'passwords.json');
+const PASSWORDS_FILE = getDataPath('passwords.json');
 const DEFAULT_PASSWORD = '123456';
 
 function loadJson(filePath) {
@@ -81,8 +82,7 @@ function checkPassword(username, password) {
 
 function updatePassword(name, newPassword) {
   if (!name || typeof newPassword !== 'string' || newPassword.length < 1) return false;
-  const dir = path.dirname(PASSWORDS_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  ensureDataDir();
   const current = loadPasswordOverrides();
   current[name] = newPassword.slice(0, 200);
   fs.writeFileSync(PASSWORDS_FILE, JSON.stringify(current, null, 2), 'utf8');

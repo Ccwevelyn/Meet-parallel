@@ -1,17 +1,11 @@
 const path = require('path');
 const fs = require('fs');
 const { getMemberById } = require('./members');
+const { getDataPath, ensureDataDir } = require('./data-path');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const CHAT_FILE = path.join(DATA_DIR, 'chat-history.json');
-const PERSONAS_FILE = path.join(DATA_DIR, 'personas.json');
-const COLLECTED_FILE = path.join(DATA_DIR, 'collected-chat.json');
-
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
+const CHAT_FILE = getDataPath('chat-history.json');
+const PERSONAS_FILE = getDataPath('personas.json');
+const COLLECTED_FILE = getDataPath('collected-chat.json');
 
 /**
  * 读取已导入的聊天记录（可与采集对话合并做人设）
@@ -200,6 +194,5 @@ module.exports = {
   loadCollectedChat,
   appendCollectedMessage,
   appendChatMessageToPersona,
-  mergeCollectedIntoPersonas,
-  DATA_DIR
+  mergeCollectedIntoPersonas
 };

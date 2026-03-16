@@ -7,11 +7,11 @@ const { getMemberById, getMemberByIdOrName } = require('./members');
 const { hasAvatarFile } = require('./avatar');
 
 const router = express.Router();
-const DATA_DIR = path.join(__dirname, '..', 'data');
-const PROFILES_FILE = path.join(DATA_DIR, 'profiles.json');
+const { getDataPath, ensureDataDir } = require('./data-path');
+const PROFILES_FILE = getDataPath('profiles.json');
 const AVATARS_DIR = path.join(__dirname, '..', 'public', 'avatars');
 
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+ensureDataDir();
 if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
 
 function loadProfiles() {

@@ -39,7 +39,7 @@
 
   function appendMessage(container, m) {
     const isChat = container.id === 'chat-messages';
-    const isMe = isChat && window._member && (m.isHuman || (m.memberName === window._member.displayName));
+    const isMe = isChat && window._member && (m.memberId === window._member.id || (m.memberName && m.memberName === window._member.displayName));
     const avatarSrc = m.memberId ? '/api/avatar/' + m.memberId : '';
     const time = m.time ? new Date(m.time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
     const msgClass = 'msg' + (m.isHuman ? ' human' : '') + (isChat ? (isMe ? ' msg-me' : ' msg-other') : ' msg-other');
