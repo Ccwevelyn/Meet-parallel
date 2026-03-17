@@ -13,6 +13,24 @@ function setAIPaused(paused) {
 
 // 通用名 AI_*（DeepSeek/智谱等），兼容旧名 OPENAI_*
 const OPENAI_API_KEY = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
+
+/** 若最近几条消息里有多条以相同开头（≥6 字），返回该开头，用于提示模型禁止再跟风 */
+function getRepeatedPrefix(texts) {
+  if (!texts || texts.length < 2) return '';
+  const minLen = 6;
+  const maxLen = 24;
+  for (let len = maxLen; len >= minLen; len--) {
+    const counts = {};
+    for (const t of texts) {
+      if (t.length < len) continue;
+      const p = t.slice(0, len);
+      counts[p] = (counts[p] || 0) + 1;
+    }
+    const found = Object.entries(counts).find(([, n]) => n >= 2);
+    if (found) return found[0];
+  }
+  return '';
+}
 const OPENAI_BASE_URL = process.env.AI_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
 const OPENAI_MODEL = process.env.AI_MODEL || process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
 
@@ -31,6 +49,7 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
     '规则：只输出一条简短的口语消息（一行），不要加引号、不要解释、不要写「我说：」等前缀。',
     `身份：你在群里的称呼是「${displayName}」（英文名 ${member.name}）。必须用这个人独有的语气和用词来回复。`,
     '重要：不要复读、照搬或改写前面别人刚说过的话。你要基于自己的性格说出新的、符合你人设的内容，可以接话、吐槽、提问、发表看法，但不要重复他人原句。',
+    '严禁跟风同一句式或梗：若上面已有多条消息用了相同/相似的开头或句式（例如「程哥的午饭能帮我...」），你绝对不能再用该句式，必须换一个完全不同的话题、说法或角度，像真人一样自然换话。',
     '语气：像真人一样自然参与，不必每条都接话、不必一直刷屏，有话想说就说一句，没话就少说。'
   ];
   if (persona.personaSummary && persona.personaSummary.trim()) {
@@ -44,12 +63,18 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
     .slice(-14)
     .map(m => `${m.memberName}: ${m.text}`)
     .join('\n');
+  const recentTexts = (recentMessages.slice(-6) || []).map(m => (m.text || '').trim()).filter(Boolean);
+  const repeatedPrefix = getRepeatedPrefix(recentTexts);
+
   let userContent;
   if (recent) {
     if (options.replyToHuman) {
       userContent = `最近群聊：\n${recent}\n\n上一条是真人（群友）发的，请以「${displayName}」的身份对其做出回应或接话，自然参与对话（不要复读对方原句；只输出这一条）。`;
     } else {
       userContent = `最近群聊：\n${recent}\n\n请以「${displayName}」的身份回复一条新消息（必须是新内容，不要复读上面任何人说过的话；只输出这一条）。`;
+    }
+    if (repeatedPrefix) {
+      userContent += `\n\n【必守】上面已有多人用了类似「${repeatedPrefix}...」的句式，你本次回复严禁再使用该开头或句式，必须换完全不同的说法或话题。`;
     }
   } else {
     userContent = `请用「${displayName}」的口吻发一句开场白（只输出这一句）。`;
