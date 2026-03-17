@@ -142,7 +142,7 @@ function messagesGetRecent(limit = 20) {
 
 function messagesGetDates() {
   const rows = getDb().prepare(
-    "SELECT DISTINCT date(time) AS d FROM messages WHERE time IS NOT NULL AND time != '' ORDER BY d DESC"
+    "SELECT DISTINCT substr(time, 1, 10) AS d FROM messages WHERE time IS NOT NULL AND time != '' AND length(time) >= 10 ORDER BY d DESC"
   ).all();
   return rows.map(r => r.d).filter(Boolean);
 }
@@ -152,8 +152,8 @@ function messagesQuery(options = {}) {
   let sql = 'SELECT id, member_id AS memberId, member_name AS memberName, text, time, is_human AS isHuman FROM messages WHERE 1=1';
   const params = [];
   if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    sql += ' AND date(time) = ?';
-    params.push(date);
+    sql += ' AND time LIKE ?';
+    params.push(date + '%');
   }
   if (memberId) {
     sql += ' AND member_id = ?';
