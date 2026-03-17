@@ -133,6 +133,8 @@ function main() {
 
   const replyRates = computeReplyRates(messages);
   const replyToWhom = computeReplyToWhom(messages);
+  const replyDelays = personas.computeReplyDelays(messages);
+  const messageShares = personas.computeMessageShares(messages);
   const built = personas.buildPersonas(messages, { sampleSize: SAMPLE_SIZE });
   const memberNames = new Set(getAllMembers().map(m => m.name));
 
@@ -140,6 +142,8 @@ function main() {
     p.replyHabits = (p.replyHabits && p.replyHabits.trim()) || replyHabitsSummary(replyRates[name] || 0);
     p.replyRate = replyRates[name] != null ? replyRates[name] : 0;
     p.replyToWhom = replyToWhom[name] || {};
+    p.averageReplyDelayMs = replyDelays[name] != null ? replyDelays[name] : null;
+    p.messageShare = messageShares[name] != null ? messageShares[name] : null;
     if (!p.activeHours || !p.activeHours.length) p.activeHours = [];
   }
 
@@ -154,6 +158,11 @@ function main() {
       sampleMessages: p.sampleMessages,
       activeHours: p.activeHours,
       replyHabits: p.replyHabits,
+      replyRate: p.replyRate,
+      replyToWhom: p.replyToWhom || {},
+      averageReplyDelayMs: p.averageReplyDelayMs,
+      messageShare: p.messageShare,
+      personaSummary: (existing[name] && existing[name].personaSummary) || '',
       updatedAt: new Date().toISOString()
     };
     if (merged[name].replyHabits === undefined) merged[name].replyHabits = p.replyHabits;

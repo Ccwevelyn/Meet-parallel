@@ -48,6 +48,8 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
     '你是一个群聊里的成员，正在用「自己的口吻」回复。',
     '规则：只输出一条简短的口语消息（一行），不要加引号、不要解释、不要写「我说：」等前缀。',
     `身份：你在群里的称呼是「${displayName}」（英文名 ${member.name}）。必须用这个人独有的语气和用词来回复。`,
+    '语境与话题：回复必须贴合当前对话的语境和正在讨论的话题，不要突然扯到毫不相关的事情。注意当前日期、星期、时间、季节等，可自然提及与当下相关的内容（如周末、节日、天气、饭点等）。',
+    '外部信息：可以适当引用外部资源（热点、新闻、趣闻、冷知识等）参与讨论，但仅在与当前话题或氛围相符时自然带入，不要生硬插入或强行换题。',
     '重要：不要复读、照搬或改写前面别人刚说过的话。你要基于自己的性格说出新的、符合你人设的内容，可以接话、吐槽、提问、发表看法，但不要重复他人原句。',
     '严禁跟风同一句式或梗：若上面已有多条消息用了相同/相似的开头或句式（例如「程哥的午饭能帮我...」），你绝对不能再用该句式，必须换一个完全不同的话题、说法或角度，像真人一样自然换话。',
     '语气：像真人一样自然参与，不必每条都接话、不必一直刷屏，有话想说就说一句，没话就少说。'
@@ -66,23 +68,28 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
   const recentTexts = (recentMessages.slice(-6) || []).map(m => (m.text || '').trim()).filter(Boolean);
   const repeatedPrefix = getRepeatedPrefix(recentTexts);
 
+  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const now = new Date();
+  const timeContext = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${weekdays[now.getDay()]} ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
+
   let userContent;
   if (recent) {
+    userContent = `当前时间：${timeContext}\n\n最近群聊：\n${recent}\n\n`;
     if (options.replyToHuman) {
-      userContent = `最近群聊：\n${recent}\n\n上一条是真人（群友）发的，请以「${displayName}」的身份对其做出回应或接话，自然参与对话（不要复读对方原句；只输出这一条）。`;
+      userContent += `上一条是真人（群友）发的，请以「${displayName}」的身份对其做出回应或接话，贴合当前话题与语境，自然参与对话（不要复读对方原句；只输出这一条）。`;
     } else {
-      userContent = `最近群聊：\n${recent}\n\n请以「${displayName}」的身份回复一条新消息（必须是新内容，不要复读上面任何人说过的话；只输出这一条）。`;
+      userContent += `请以「${displayName}」的身份回复一条新消息，紧扣当前对话话题与语境（必须是新内容，不要复读上面任何人说过的话；只输出这一条）。`;
     }
     if (repeatedPrefix) {
       userContent += `\n\n【必守】上面已有多人用了类似「${repeatedPrefix}...」的句式，你本次回复严禁再使用该开头或句式，必须换完全不同的说法或话题。`;
     }
   } else {
-    userContent = `请用「${displayName}」的口吻发一句开场白（只输出这一句）。`;
+    userContent = `当前时间：${timeContext}\n\n请用「${displayName}」的口吻发一句贴合当下时间、自然的开场白（只输出这一句）。`;
   }
 
   const trends = await getTrendsContext();
   if (trends) {
-    userContent += '\n\n以下为可选参考（可自然提及或忽略）：\n' + trends;
+    userContent += '\n\n以下为可选外部参考（仅在与当前话题或氛围相关时可自然提及，不必强行使用）：\n' + trends;
   }
 
   try {
@@ -121,9 +128,10 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
 }
 
 /**
- * 选人发言：按活跃时段、谁在群里回复多（replyRate）、以及「谁常回复当前发言人」（replyToMemberName）加权。
- * 排除当前被真人占用的成员。
+ * 选人发言：按活跃时段、谁在群里回复多（replyRate）、「谁常回复当前发言人」（replyToMemberName）、
+ * 以及「消息里是否提到该角色」（mentionKeywords）加权。排除当前被真人占用的成员。
  * options.onlyActiveHours === true 时：仅考虑当前在其常见在线时段内的成员（非该时段不发言）；回复真人时不限。
+ * options.lastMessageText：最近一条消息正文，若包含某成员的 mentionKeywords 则提高该成员被选中的概率（可不回复）。
  */
 function pickMember(members, personas, getOccupiedMemberIds, options = {}) {
   const occupied = Array.isArray(getOccupiedMemberIds) ? getOccupiedMemberIds : (typeof getOccupiedMemberIds === 'function' ? getOccupiedMemberIds() : []);
@@ -136,6 +144,7 @@ function pickMember(members, personas, getOccupiedMemberIds, options = {}) {
   const now = new Date();
   const hour = (now.getHours() + 8) % 24;
   const replyToMemberName = options.replyToMemberName || null;
+  const lastMessageText = (options.lastMessageText || '').trim();
 
   if (options.onlyActiveHours && !replyToMemberName) {
     trained = trained.filter(m => {
@@ -160,6 +169,13 @@ function pickMember(members, personas, getOccupiedMemberIds, options = {}) {
       const count = p.replyToWhom[replyToMemberName];
       if (count != null && count > 0) w += count;
     }
+    if (p && p.messageShare != null && p.messageShare >= 0) {
+      w *= Math.max(0.3, 0.4 + p.messageShare);
+    }
+    if (lastMessageText && m.mentionKeywords && Array.isArray(m.mentionKeywords)) {
+      const mentioned = m.mentionKeywords.some(kw => kw && lastMessageText.includes(kw));
+      if (mentioned) w *= 2.2;
+    }
     return { member: m, weight: Math.max(0.1, w) };
   });
 
@@ -183,14 +199,26 @@ async function generateReply(member, recentMessages, personas, options = {}) {
 
 /** 真人回复窗口：10 秒内必须有人接话，失败则重试 */
 const HUMAN_REPLY_DEADLINE_MS = 10000;
-const HUMAN_REPLY_FIRST_DELAY_MS = 2000 + Math.random() * 3000;
+const HUMAN_REPLY_BASE_DELAY_MS = 2000 + Math.random() * 3000;
 const HUMAN_REPLY_RETRY_MS = 2500;
+const HUMAN_REPLY_MAX_PERSON_DELAY_MS = 25000;
 
 /**
- * 真人发言后 10 秒内安排一名 AI 成员对其回复；若首次未成功则重试，保证真人必有回复
+ * 真人发言后 10 秒内安排一名 AI 成员对其回复；若首次未成功则重试，保证真人必有回复。
+ * 首次尝试延迟 = 基础 2–5 秒 + 该成员学习到的平均回复延迟（上限 25 秒），习惯慢回的人会稍晚再发。
  */
 function scheduleOneReplySoon(addAIMessage, getRecentMessages, getOccupiedMemberIds) {
   const startTime = Date.now();
+
+  async function doGenerateAndSend(member, personas) {
+    const recent = typeof getRecentMessages === 'function' ? getRecentMessages(24) : [];
+    const text = await generateReply(member, recent, personas, { replyToHuman: true });
+    if (text) {
+      addAIMessage(member.id, text);
+      return true;
+    }
+    return false;
+  }
 
   async function attempt() {
     if (isAIPaused()) return false;
@@ -209,14 +237,22 @@ function scheduleOneReplySoon(addAIMessage, getRecentMessages, getOccupiedMember
       personas = loadPersonas();
     } catch (_) {}
     const occupied = typeof getOccupiedMemberIds === 'function' ? getOccupiedMemberIds() : [];
-    const member = pickMember(members, personas, occupied, { replyToMemberName });
+    const lastMessageText = (lastMsg && lastMsg.text) ? String(lastMsg.text).trim() : '';
+    const member = pickMember(members, personas, occupied, { replyToMemberName, lastMessageText });
     if (!member) return false;
-    const text = await generateReply(member, recent, personas, { replyToHuman: true });
-    if (text) {
-      addAIMessage(member.id, text);
-      return true;
+    const persona = personas[member.name];
+    const personDelayMs = Math.min(
+      (persona && persona.averageReplyDelayMs != null ? persona.averageReplyDelayMs : 0) | 0,
+      HUMAN_REPLY_MAX_PERSON_DELAY_MS
+    );
+    if (personDelayMs > 0) {
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          doGenerateAndSend(member, personas).then(resolve);
+        }, personDelayMs);
+      });
     }
-    return false;
+    return doGenerateAndSend(member, personas);
   }
 
   function schedule() {
@@ -225,7 +261,7 @@ function scheduleOneReplySoon(addAIMessage, getRecentMessages, getOccupiedMember
       if (!sent) setTimeout(schedule, HUMAN_REPLY_RETRY_MS);
     });
   }
-  setTimeout(schedule, HUMAN_REPLY_FIRST_DELAY_MS);
+  setTimeout(schedule, HUMAN_REPLY_BASE_DELAY_MS);
 }
 
 function scheduleAISimulation(addAIMessage, getRecentMessages, getOccupiedMemberIds) {

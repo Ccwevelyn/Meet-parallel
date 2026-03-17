@@ -66,6 +66,49 @@ function replyHabitsSummary(replyRate) {
   return '多独立发言，较少回复他人。';
 }
 
+/** 每人「回复他人时」的平均延迟（毫秒），用于模拟回复快慢 */
+function computeReplyDelays(messages) {
+  const sorted = messages.slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  const delaysBySender = {};
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const cur = sorted[i];
+    if (cur.sender === prev.sender) continue;
+    const prevT = new Date(prev.time).getTime();
+    const curT = new Date(cur.time).getTime();
+    if (isNaN(prevT) || isNaN(curT)) continue;
+    const delay = curT - prevT;
+    if (delay < 0 || delay > 24 * 60 * 60 * 1000) continue;
+    const name = (cur.sender || '').trim();
+    if (!name) continue;
+    if (!delaysBySender[name]) delaysBySender[name] = [];
+    delaysBySender[name].push(delay);
+  }
+  const out = {};
+  for (const [name, arr] of Object.entries(delaysBySender)) {
+    if (arr.length < 1) continue;
+    out[name] = Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
+  }
+  return out;
+}
+
+/** 每人消息数占比（0~1），用于模拟「不爱说话」vs「话多」 */
+function computeMessageShares(messages) {
+  const total = messages.length;
+  if (total === 0) return {};
+  const bySender = {};
+  for (const m of messages) {
+    const name = (m.sender || '').trim();
+    if (!name) continue;
+    bySender[name] = (bySender[name] || 0) + 1;
+  }
+  const out = {};
+  for (const [name, count] of Object.entries(bySender)) {
+    out[name] = Math.round((count / total) * 1000) / 1000;
+  }
+  return out;
+}
+
 /**
  * 按发送人分组，并计算每人发言时段分布、取 N 条作为样本（sampleSize 为 0 时取全部，不设上限）
  */
@@ -140,6 +183,8 @@ function mergeCollectedIntoPersonas(options = {}) {
   const built = buildPersonas(merged, { sampleSize: options.sampleSize ?? 0 });
   const rates = computeReplyRates(merged);
   const toWhom = computeReplyToWhom(merged);
+  const delays = computeReplyDelays(merged);
+  const shares = computeMessageShares(merged);
   const existing = loadPersonas();
   const result = { ...existing };
   for (const name of Object.keys(built)) {
@@ -148,6 +193,8 @@ function mergeCollectedIntoPersonas(options = {}) {
       replyHabits: replyHabitsSummary(rates[name] ?? 0),
       replyRate: rates[name] ?? 0,
       replyToWhom: toWhom[name] || {},
+      averageReplyDelayMs: delays[name] != null ? delays[name] : null,
+      messageShare: shares[name] != null ? shares[name] : null,
       personaSummary: (existing[name] && existing[name].personaSummary) || '',
       updatedAt: new Date().toISOString()
     };
@@ -167,7 +214,7 @@ function appendChatMessageToPersona(memberId, text, time) {
     appendCollectedMessage({ sender: member.name, text: trimmed, time: isoTime });
     const personas = loadPersonas();
     if (!personas[member.name]) {
-      personas[member.name] = { name: member.name, messageCount: 0, sampleMessages: [], activeHours: [], replyHabits: '', replyToWhom: {}, replyRate: 0, personaSummary: '', updatedAt: new Date().toISOString() };
+      personas[member.name] = { name: member.name, messageCount: 0, sampleMessages: [], activeHours: [], replyHabits: '', replyToWhom: {}, replyRate: 0, averageReplyDelayMs: null, messageShare: null, personaSummary: '', updatedAt: new Date().toISOString() };
     }
     const list = personas[member.name].sampleMessages || [];
     list.push(trimmed);
@@ -183,7 +230,7 @@ function appendChatMessageToPersona(memberId, text, time) {
 function updatePersona(name, patch) {
   const personas = loadPersonas();
   if (!personas[name]) {
-    personas[name] = { name, messageCount: 0, sampleMessages: [], activeHours: [], replyHabits: '', replyToWhom: {}, replyRate: 0, personaSummary: '', updatedAt: new Date().toISOString() };
+    personas[name] = { name, messageCount: 0, sampleMessages: [], activeHours: [], replyHabits: '', replyToWhom: {}, replyRate: 0, averageReplyDelayMs: null, messageShare: null, personaSummary: '', updatedAt: new Date().toISOString() };
   }
   if (Array.isArray(patch.activeHours)) {
     personas[name].activeHours = patch.activeHours.filter(h => Number.isInteger(h) && h >= 0 && h <= 23);
@@ -212,5 +259,7 @@ module.exports = {
   appendCollectedMessage,
   appendChatMessageToPersona,
   mergeCollectedIntoPersonas,
+  computeReplyDelays,
+  computeMessageShares,
   chatHistorySave: db.chatHistorySave
 };
