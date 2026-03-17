@@ -84,6 +84,27 @@ function computeReplyRates(messages) {
   return rates;
 }
 
+/** 统计谁经常回复谁：replyToWhom[回复人][被回复人] = 次数 */
+function computeReplyToWhom(messages) {
+  const sorted = messages.slice().sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  const replyToWhom = {};
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const cur = sorted[i];
+    const prevT = new Date(prev.time).getTime();
+    const curT = new Date(cur.time).getTime();
+    if (isNaN(prevT) || isNaN(curT)) continue;
+    if (cur.sender !== prev.sender && (curT - prevT) <= REPLY_WINDOW_MS) {
+      const replier = (cur.sender || '').trim();
+      const toWhom = (prev.sender || '').trim();
+      if (!replier || !toWhom) continue;
+      if (!replyToWhom[replier]) replyToWhom[replier] = {};
+      replyToWhom[replier][toWhom] = (replyToWhom[replier][toWhom] || 0) + 1;
+    }
+  }
+  return replyToWhom;
+}
+
 function replyHabitsSummary(replyRate) {
   if (replyRate >= 0.45) return '经常在他人发言后回复，参与接话较多。';
   if (replyRate >= 0.25) return '有时会回复他人消息，也会独立发言。';
@@ -111,11 +132,14 @@ function main() {
   }
 
   const replyRates = computeReplyRates(messages);
+  const replyToWhom = computeReplyToWhom(messages);
   const built = personas.buildPersonas(messages, { sampleSize: SAMPLE_SIZE });
   const memberNames = new Set(getAllMembers().map(m => m.name));
 
   for (const [name, p] of Object.entries(built)) {
     p.replyHabits = (p.replyHabits && p.replyHabits.trim()) || replyHabitsSummary(replyRates[name] || 0);
+    p.replyRate = replyRates[name] != null ? replyRates[name] : 0;
+    p.replyToWhom = replyToWhom[name] || {};
     if (!p.activeHours || !p.activeHours.length) p.activeHours = [];
   }
 

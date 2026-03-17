@@ -40,6 +40,9 @@ router.post('/', requireAuth, (req, res) => {
   };
   msg.id = db.messagesAdd(msg);
   appendChatMessageToPersona(req.user.memberId, msg.text, msg.time);
+  const { scheduleOneReplySoon } = require('./ai-simulation');
+  const { getOccupiedMemberIds } = require('./presence');
+  scheduleOneReplySoon(addAIMessage, getRecentMessages, getOccupiedMemberIds);
   res.json({ message: msg });
 });
 
