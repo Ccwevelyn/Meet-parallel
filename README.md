@@ -113,6 +113,8 @@ npm start
 
 在项目根目录创建 `.env`（可复制 `.env.example`），填好上述变量后重启服务即可。
 
+**推荐模型**：DeepSeek v3、Gemini、GPT-5 等均可通过上述变量切换；扩展（RAG、网络热点/二次元检索、建议购买的 API）见 [docs/需求与实现计划.md](docs/需求与实现计划.md)。
+
 ---
 
 ## 部署到 Render

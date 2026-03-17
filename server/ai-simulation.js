@@ -92,19 +92,28 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
 /**
  * 选人发言：按活跃时段、谁在群里回复多（replyRate）、以及「谁常回复当前发言人」（replyToMemberName）加权。
  * 排除当前被真人占用的成员。
+ * options.onlyActiveHours === true 时：仅考虑当前在其常见在线时段内的成员（非该时段不发言）；回复真人时不限。
  */
 function pickMember(members, personas, getOccupiedMemberIds, options = {}) {
   const occupied = Array.isArray(getOccupiedMemberIds) ? getOccupiedMemberIds : (typeof getOccupiedMemberIds === 'function' ? getOccupiedMemberIds() : []);
-  const trained = members.filter(m => {
+  let trained = members.filter(m => {
     if (occupied.indexOf(m.id) !== -1) return false;
     const p = personas[m.name];
     return p && Array.isArray(p.sampleMessages) && p.sampleMessages.length > 0;
   });
-  if (!trained.length) return null;
 
   const now = new Date();
   const hour = (now.getHours() + 8) % 24;
   const replyToMemberName = options.replyToMemberName || null;
+
+  if (options.onlyActiveHours && !replyToMemberName) {
+    trained = trained.filter(m => {
+      const p = personas[m.name];
+      if (!p || !p.activeHours || p.activeHours.length === 0) return true;
+      return p.activeHours.includes(hour) || p.activeHours.some(h => Math.abs(h - hour) <= 1);
+    });
+  }
+  if (!trained.length) return null;
 
   const withWeight = trained.map(m => {
     const p = personas[m.name];
@@ -211,7 +220,7 @@ function scheduleAISimulation(addAIMessage, getRecentMessages, getOccupiedMember
       personas = loadPersonas();
     } catch (_) {}
     const occupied = typeof getOccupiedMemberIds === 'function' ? getOccupiedMemberIds() : [];
-    const member = pickMember(members, personas, occupied, {});
+    const member = pickMember(members, personas, occupied, { onlyActiveHours: true });
     if (!member) return;
     const recent = typeof getRecentMessages === 'function' ? getRecentMessages(24) : [];
     const text = await generateReply(member, recent, personas);
