@@ -17,7 +17,7 @@
 | **改** | 用成员账号登录后以该身份发言；**你发言时 AI 不再代该成员说话**（真人优先） |
 | **AI 发言** | 仅对「有人设样本」的成员按人设 + 最近对话生成回复；可配置活跃时段、回复习惯 |
 | **语气学习** | ① 采集语气（和页面 AI 聊约 10 分钟） ② **群聊里真人说的话自动加入该成员人设**，无需单独采集 |
-| **管理员** | 用 `admin` 登录可微调每人**活跃时段**、**回复习惯**（喂给 AI）、人设样本等，并支持**一键清空聊天记录** |
+| **管理员** | 用 `admin` 登录可微调每人**活跃时段**、**回复习惯**、人设样本，**一键清空聊天记录**、**从现有数据重新合并人设**、**一键暂停/恢复 AI** |
 
 ---
 
@@ -69,7 +69,7 @@ npm start
 
 - **观**：不登录，只读当前或历史对话；可通过**日期选择**和**按成员筛选**查看某日或某人的消息。
 - **改**：用**成员用户名 + 密码**登录，以该身份在群内发言。此时**该身份由你发言，AI 不会代该成员回复**；其他成员仍由 AI 按人设发言。你在群聊里说的话会**自动写入该成员的人设样本**，后续 AI 会学到你的语气和习惯。
-- **管理员**：用户名 **admin**，密码默认 **Cc921**（可用环境变量 `ADMIN_PASSWORD` 覆盖）。登录后进入管理页，可设置每人**活跃时段**（几点更爱说话）、**回复习惯**（一段描述喂给 AI，如「喜欢用哈哈哈结尾」）、人设样本等，并可**一键清空所有聊天记录**。
+- **管理员**：用户名 **admin**，密码默认 **Cc921**（可用环境变量 `ADMIN_PASSWORD` 覆盖）。登录后进入管理页可：设置每人**活跃时段**、**回复习惯**、人设样本；**一键清空聊天记录**；**从现有数据重新合并人设**（解除样本条数限制）；**一键暂停/恢复 AI**（暂停后所有 AI 不发言，再次点击恢复）。
 
 ---
 
@@ -98,22 +98,24 @@ npm start
 
 - 仅**有人设样本**（`sampleMessages` 非空）的成员会参与自动发言；无人设的成员不会由 AI 代发。
 - 已配置 `AI_API_KEY` 时：每次从符合条件的成员中按**活跃时段**加权选人，把**该成员的人设总结（若有）+ 样本 + 最近群聊 + 回复习惯**发给大模型，并明确要求**不要复读、照搬前面人的话，必须说新的、符合该身份的内容**；只有大模型返回内容时才发消息，无占位句或随机旧句。
-- **发言时间（活跃时段）**：由聊群记录（CSV 或导入记录）里每人发言的时间戳统计得出，谁在几点更常出现就更容易被选在该时段发言。
-- **语言习惯**：来自样本原文 + 回复习惯（是否常接话）+ 人设总结（运行 `build-persona-summaries.js` 后生成的性格/语气总结）。
-- **真人发言后必有回复**：当你以成员身份在群里说话后，**10 秒内**会有一名 AI 成员对你接话或回应（失败会自动重试）。选谁来接话会参考聊群数据：在群里回复比较多的人更容易被选中，且经常回复你的那个人（谁常回复谁）会被额外加权。
-- **真人登录并占用的成员**会被排除，不会由 AI 代发（不共存）。
+- **发言时间（活跃时段）**：由聊群记录统计每人常发言的时段。**自发闲聊**时仅在该成员常见在线时段内才会被选去发言；非其常见时段该角色不主动说话。
+- **语言习惯**：来自样本原文 + 回复习惯 + 人设总结（运行 `build-persona-summaries.js` 后生成）。
+- **真人发言后必有回复**：以成员身份发言后 **10 秒内**会有一名 AI 接话（失败会重试）；选人时参考「谁常回复谁」。
+- **真人登录并占用的成员**不参与 AI 代发（不共存）。
+- **可选热点/兴趣**：配置 `SERPER_API_KEY` 后，发言时会拉取「今日热点」「二次元/游戏」等作为参考，AI 可自然提及。
 
 ### 环境变量（接 AI 时）
 
 | 变量 | 说明 |
 |------|------|
-| `AI_API_KEY` | 必填。DeepSeek / 智谱 / OpenAI 等 API 密钥（也兼容 `OPENAI_API_KEY`） |
-| `AI_BASE_URL` | 选填。默认 `https://api.openai.com/v1`（DeepSeek 可用 `https://api.deepseek.com/v1`） |
-| `AI_MODEL` | 选填。默认 `gpt-3.5-turbo`（DeepSeek 可用 `deepseek-chat`） |
+| `AI_API_KEY` | 必填。**换用哪家模型就用哪家的 Key**：用 DeepSeek v3 就填 DeepSeek 后台的 Key，用 OpenAI 就填 OpenAI 的 Key。 |
+| `AI_BASE_URL` | 选填。**接口地址**，不同厂商不同。默认 `https://api.openai.com/v1`。用 **DeepSeek v3** 填 `https://api.deepseek.com/v1`。 |
+| `AI_MODEL` | 选填。**模型名**。默认 `gpt-3.5-turbo`。用 **DeepSeek v3** 填 `deepseek-chat`。 |
+| `SERPER_API_KEY` | 选填。Serper 搜索 API 密钥，配置后 AI 可参考今日热点、二次元/游戏等并自然提及 |
 
-在项目根目录创建 `.env`（可复制 `.env.example`），填好上述变量后重启服务即可。
+在项目根目录创建 `.env`（可复制 `.env.example`），填好变量后重启服务即可。  
 
-**推荐模型**：DeepSeek v3、Gemini、GPT-5 等均可通过上述变量切换；扩展（RAG、网络热点/二次元检索、建议购买的 API）见 [docs/需求与实现计划.md](docs/需求与实现计划.md)。
+**示例（DeepSeek v3）**：`AI_API_KEY=`（DeepSeek 后台 Key）、`AI_BASE_URL=https://api.deepseek.com/v1`、`AI_MODEL=deepseek-chat`。换用其他厂商时，Key 与 Base URL 均需改为该厂商的。
 
 ---
 
@@ -129,7 +131,8 @@ npm start
    |-----|------|
    | `LOGIN_CREDENTIALS` | 成员密码 JSON 字符串（见上文） |
    | `ADMIN_PASSWORD` | 管理员密码，默认 Cc921 |
-   | `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` | 接 AI 时填写 |
+   | `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL` | 接 AI 时填写（如 DeepSeek v3） |
+   | `SERPER_API_KEY` | 选填。热点/二次元检索 |
    | **`DATA_DIR`** | **部署后要持久存储必填**：填挂载的磁盘路径，例如 `/data`（需先添加 Disk，见下） |
 
 4. **数据持久化（部署后数据不丢）**：所有数据存于 **SQLite 数据库**（`data/app.db` 或 `DATA_DIR/app.db`）。在 Render 的 Web Service 里点击 **Disks**，新建磁盘并挂载路径 **`/data`**；在 Environment 里添加 **`DATA_DIR`** = **`/data`**。保存并重新部署后，数据库文件落在该磁盘上，**人设、聊天记录、采集、密码等永久保留**。
@@ -172,7 +175,9 @@ npm start
 DATA_DIR=/data node scripts/cleanup-messages.js
 ```
 
-或 `node scripts/cleanup-messages.js /data`。脚本会删除内容包含「男的哥们」等关键词的消息；关键词列表见 `scripts/cleanup-messages.js` 顶部，可按需修改。
+或 `node scripts/cleanup-messages.js /data`。关键词列表见脚本顶部，可按需修改。
+
+**清理无效 persona 记录**：若数据库里出现非成员的 persona（如误导入），可执行 `node scripts/remove-junk-personas.js`（可选参数：数据目录，如 `/data`）。
 
 ---
 
@@ -187,4 +192,5 @@ DATA_DIR=/data node scripts/cleanup-messages.js
 ## 可选与扩展
 
 - 成员名单、昵称在 `server/members.js` 中维护；密码在 `credentials.json` 或环境变量中配置。
-- 如需更多人设维度或回复习惯校验，可在管理页与 `server/personas.js`、`server/admin.js` 中扩展。
+- 脚本：`learn-from-csv.js`（CSV 学习）、`build-persona-summaries.js`（人设总结）、`cleanup-messages.js`（清理无意义消息）、`remove-junk-personas.js`（删除无效 persona）、`build-secure.js`（混淆构建）。
+- 如需更多人设维度或回复习惯，可在管理页与 `server/personas.js`、`server/admin.js` 中扩展。

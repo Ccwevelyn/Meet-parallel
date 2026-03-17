@@ -1,5 +1,6 @@
 const { getAllMembers } = require('./members');
 const { loadPersonas } = require('./personas');
+const { getTrendsContext } = require('./serper');
 
 /** 管理员一键暂停：为 true 时所有 AI 不发言（自发 + 回复真人），再次关闭后恢复 */
 let _aiPaused = false;
@@ -52,6 +53,11 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
     }
   } else {
     userContent = `请用「${displayName}」的口吻发一句开场白（只输出这一句）。`;
+  }
+
+  const trends = await getTrendsContext();
+  if (trends) {
+    userContent += '\n\n以下为可选参考（可自然提及或忽略）：\n' + trends;
   }
 
   try {
