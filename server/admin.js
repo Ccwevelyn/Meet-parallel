@@ -6,6 +6,7 @@ const { requireAuth, requireAdmin } = require('./auth');
 const { getAllMembers } = require('./members');
 const { loadPersonas, updatePersona, mergeCollectedIntoPersonas } = require('./personas');
 const { messagesClearAll } = require('./db');
+const { isAIPaused, setAIPaused } = require('./ai-simulation');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -60,6 +61,21 @@ router.post('/personas/rebuild', (req, res) => {
   } catch (e) {
     return res.status(500).json({ error: e.message || '重新合并失败' });
   }
+});
+
+// GET 当前 AI 是否暂停
+router.get('/ai-paused', (req, res) => {
+  return res.json({ paused: isAIPaused() });
+});
+
+// POST 一键开启/关闭 AI（body: { paused: true|false }），关闭后所有 AI 不发言，再次开启恢复上次对话
+router.post('/ai-paused', (req, res) => {
+  const paused = req.body && req.body.paused;
+  if (typeof paused !== 'boolean') {
+    return res.status(400).json({ error: '请提供 paused: true 或 false' });
+  }
+  setAIPaused(paused);
+  return res.json({ ok: true, paused: isAIPaused() });
 });
 
 module.exports = { adminRouter: router };

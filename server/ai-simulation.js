@@ -1,6 +1,15 @@
 const { getAllMembers } = require('./members');
 const { loadPersonas } = require('./personas');
 
+/** 管理员一键暂停：为 true 时所有 AI 不发言（自发 + 回复真人），再次关闭后恢复 */
+let _aiPaused = false;
+function isAIPaused() {
+  return _aiPaused;
+}
+function setAIPaused(paused) {
+  _aiPaused = !!paused;
+}
+
 // 通用名 AI_*（DeepSeek/智谱等），兼容旧名 OPENAI_*
 const OPENAI_API_KEY = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
 const OPENAI_BASE_URL = process.env.AI_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
@@ -144,6 +153,7 @@ function scheduleOneReplySoon(addAIMessage, getRecentMessages, getOccupiedMember
   const startTime = Date.now();
 
   async function attempt() {
+    if (isAIPaused()) return false;
     const members = getAllMembers();
     if (!members.length) return false;
     const recent = typeof getRecentMessages === 'function' ? getRecentMessages(24) : [];
@@ -194,6 +204,7 @@ function scheduleAISimulation(addAIMessage, getRecentMessages, getOccupiedMember
   const MAX_INTERVAL_MS = 120000;
 
   async function sendOne() {
+    if (isAIPaused()) return;
     if (Math.random() < SKIP_CHANCE) return;
     let personas = {};
     try {
@@ -222,4 +233,4 @@ function scheduleAISimulation(addAIMessage, getRecentMessages, getOccupiedMember
   }, firstDelay);
 }
 
-module.exports = { scheduleAISimulation, scheduleOneReplySoon };
+module.exports = { scheduleAISimulation, scheduleOneReplySoon, isAIPaused, setAIPaused };

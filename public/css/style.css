@@ -511,6 +511,24 @@ html, body {
   opacity: 0.6;
   cursor: not-allowed;
 }
+.admin-ai-paused-btn {
+  margin-bottom: 1rem;
+  margin-left: 0.5rem;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.admin-ai-paused-btn:hover {
+  background: var(--bg);
+}
+.admin-ai-paused-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .admin-personas {
   display: flex;
   flex-direction: column;

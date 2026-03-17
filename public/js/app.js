@@ -562,8 +562,20 @@
   });
 
   // ——— 管理员：微调人设 ———
+  function updateAdminAIPausedButton() {
+    var btn = document.getElementById('admin-ai-paused-btn');
+    if (!btn || !window._token) return;
+    fetch(API + '/admin/ai-paused', { headers: { Authorization: 'Bearer ' + window._token } })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        btn.textContent = data.paused ? '一键恢复 AI' : '一键暂停 AI';
+      })
+      .catch(function () {});
+  }
+
   function loadAdminPersonas() {
     if (!window._token) return;
+    updateAdminAIPausedButton();
     fetch(API + '/admin/personas', { headers: { Authorization: 'Bearer ' + window._token } })
       .then(r => r.json())
       .then(function (data) {
@@ -652,6 +664,26 @@
           alert('已重新合并 ' + (data.count || 0) + ' 个人设，样本条数已按全部数据更新。');
           loadAdminPersonas();
         } else alert(data.error || '重新合并失败');
+      })
+      .catch(function () { alert('请求失败'); })
+      .finally(function () { btn.disabled = false; });
+  });
+
+  document.getElementById('admin-ai-paused-btn')?.addEventListener('click', function () {
+    if (!window._token) return;
+    var btn = this;
+    btn.disabled = true;
+    fetch(API + '/admin/ai-paused', { headers: { Authorization: 'Bearer ' + window._token } })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var nextPaused = !data.paused;
+        return fetch(API + '/admin/ai-paused', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + window._token },
+          body: JSON.stringify({ paused: nextPaused })
+        }).then(function (r) { return r.json(); }).then(function (res) {
+          if (res.ok) btn.textContent = res.paused ? '一键恢复 AI' : '一键暂停 AI';
+        });
       })
       .catch(function () { alert('请求失败'); })
       .finally(function () { btn.disabled = false; });
