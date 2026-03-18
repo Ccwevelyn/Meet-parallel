@@ -244,6 +244,9 @@ function updatePersona(name, patch) {
   if (patch.messageCount != null && Number.isInteger(patch.messageCount)) {
     personas[name].messageCount = Math.max(0, patch.messageCount);
   }
+  if (patch.personaSummary !== undefined) {
+    personas[name].personaSummary = String(patch.personaSummary).trim().slice(0, 6000);
+  }
   personas[name].updatedAt = new Date().toISOString();
   savePersonas(personas);
   return personas[name];

@@ -122,7 +122,7 @@ function migrateFromJsonIfNeeded() {
           const stmt = d.prepare('INSERT OR REPLACE INTO personas (name, message_count, sample_messages, active_hours, reply_habits, persona_summary, reply_to_whom, reply_rate, average_reply_delay_ms, message_share, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
           const run = d.transaction(() => {
             for (const [name, p] of Object.entries(personas)) {
-              stmt.run(name, p.messageCount ?? 0, JSON.stringify(p.sampleMessages || []), JSON.stringify(p.activeHours || []), (p.replyHabits || '').slice(0, 500), (p.personaSummary || '').slice(0, 2000), JSON.stringify(p.replyToWhom || {}), p.replyRate != null ? p.replyRate : 0, p.averageReplyDelayMs != null ? p.averageReplyDelayMs : null, p.messageShare != null ? p.messageShare : null, p.updatedAt || null);
+              stmt.run(name, p.messageCount ?? 0, JSON.stringify(p.sampleMessages || []), JSON.stringify(p.activeHours || []), (p.replyHabits || '').slice(0, 500), (p.personaSummary || '').slice(0, 6000), JSON.stringify(p.replyToWhom || {}), p.replyRate != null ? p.replyRate : 0, p.averageReplyDelayMs != null ? p.averageReplyDelayMs : null, p.messageShare != null ? p.messageShare : null, p.updatedAt || null);
             }
           });
           run();
@@ -262,7 +262,7 @@ function personasSaveAll(personas) {
         JSON.stringify(p.sampleMessages || []),
         JSON.stringify(p.activeHours || []),
         (p.replyHabits || '').slice(0, 500),
-        (p.personaSummary || '').slice(0, 2000),
+        (p.personaSummary || '').slice(0, 6000),
         JSON.stringify(p.replyToWhom || {}),
         p.replyRate != null ? p.replyRate : 0,
         p.averageReplyDelayMs != null ? p.averageReplyDelayMs : null,
@@ -283,7 +283,7 @@ function personasSaveOne(name, p) {
     JSON.stringify(p.sampleMessages || []),
     JSON.stringify(p.activeHours || []),
     (p.replyHabits || '').slice(0, 500),
-    (p.personaSummary || '').slice(0, 2000),
+    (p.personaSummary || '').slice(0, 6000),
     JSON.stringify(p.replyToWhom || {}),
     p.replyRate != null ? p.replyRate : 0,
     p.averageReplyDelayMs != null ? p.averageReplyDelayMs : null,

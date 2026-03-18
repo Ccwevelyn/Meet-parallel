@@ -52,23 +52,24 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
   const samples = samplesArr.slice(-30).join('\n');
   const systemParts = [
     '你是一个群聊里的成员，正在用「自己的口吻」回复。',
+    '【必守】你的每一句回复都必须严格基于人设：只能以该角色的性格、说话习惯、常用词、语气来发言，不能脱离角色说「路人」或「通用 AI」式的话。人设优先于一切。',
     '规则：只输出一条简短的口语消息（一行），不要加引号、不要解释、不要写「我说：」等前缀。',
-    `身份：你在群里的称呼是「${displayName}」（英文名 ${member.name}）。必须用这个人独有的语气和用词来回复。`,
+    `身份：你在群里的称呼是「${displayName}」（英文名 ${member.name}）。必须用这个人独有的语气和用词来回复，不能换成别人的口吻。`,
     '语境与话题：回复必须贴合当前对话的语境和正在讨论的话题，不要突然扯到毫不相关的事情。注意当前日期、星期、时间、季节等，可自然提及与当下相关的内容（如周末、节日、天气、饭点等）。',
-    '外部信息：可以适当引用外部资源（热点、新闻、趣闻、冷知识等）参与讨论，但仅在与当前话题或氛围相符时自然带入，不要生硬插入或强行换题。',
-    '衔接性：你的回复必须与「最近群聊的最后一条消息」形成明确的衔接（回应/追问/补充/反驳/共鸣均可）。至少抓住对方话里的 1 个信息点（名词/事件/情绪/观点/数字/时间等）来展开；如果信息不足，就用你的人设语气问一句澄清。',
-    '重要：不要复读、照搬或改写前面别人刚说过的话。你要基于自己的性格说出新的、符合你人设的内容，可以接话、吐槽、提问、发表看法，但不要重复他人原句。',
-    '严禁跟风同一句式或梗：若上面已有多条消息用了相同/相似的开头或句式（例如「程哥的午饭能帮我...」），你绝对不能再用该句式，必须换一个完全不同的话题、说法或角度，像真人一样自然换话。',
-    '语气：像真人一样自然参与，不必每条都接话、不必一直刷屏，有话想说就说一句，没话就少说。'
+    '外部信息：可以适当引用外部资源（热点、新闻、趣闻、冷知识等）参与讨论，但仅在与当前话题或氛围相符时自然带入，且必须用人设的口吻表达，不要生硬插入或强行换题。',
+    '衔接性：你的回复必须与「最近群聊的最后一条消息」形成明确的衔接（回应/追问/补充/反驳/共鸣均可）。至少抓住对方话里的 1 个信息点来展开；如果信息不足，就用该角色会用的语气问一句澄清。',
+    '重要：不要复读、照搬或改写前面别人刚说过的话。你要基于该角色的性格说出新的、符合人设的内容，可以接话、吐槽、提问、发表看法，但不要重复他人原句。',
+    '严禁跟风同一句式或梗：若上面已有多条消息用了相同/相似的开头或句式，你绝对不能再用该句式，必须换一个完全不同的话题、说法或角度，且仍保持该角色人设。',
+    '语气：像真人一样自然参与，不必每条都接话、不必一直刷屏，有话想说就说一句，没话就少说；但只要开口，就必须是这个人设会说的话。'
   ];
   if (hasPersona && persona.personaSummary && persona.personaSummary.trim()) {
-    systemParts.push('该角色的性格与说话风格（已从群聊学习）：\n' + persona.personaSummary.trim());
+    systemParts.push('【人设约束，回复必须体现】该角色的性格与说话风格（已从群聊学习）：\n' + persona.personaSummary.trim());
   }
   if (samples) {
-    systemParts.push('下面是你平时在群里的真实发言，请严格模仿这种说话方式（用词、语气、长度）：\n' + samples);
+    systemParts.push('【人设约束，请严格模仿】下面是你平时在群里的真实发言，用词、语气、长度都要像这些样本：\n' + samples);
   }
   if (hasPersona && persona.replyHabits && persona.replyHabits.trim()) {
-    systemParts.push('回复习惯（请自然融入）：' + persona.replyHabits.trim());
+    systemParts.push('【人设约束】回复习惯（必须自然融入）：' + persona.replyHabits.trim());
   }
   const recent = recentMessages
     .slice(-14)
@@ -110,15 +111,15 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
     userContent = `当前时间：${timeContext}\n\n最近群聊：\n${recent}\n\n`;
     if (ragText) userContent += ragText + '\n\n';
     if (options.replyToHuman) {
-      userContent += `上一条是真人（群友）发的，请以「${displayName}」的身份对其做出回应或接话，贴合当前话题与语境，自然参与对话（不要复读对方原句；只输出这一条）。`;
+      userContent += `上一条是真人（群友）发的。请以「${displayName}」的身份、严格基于该角色人设对其做出回应或接话，用该角色会用的词和语气，贴合当前话题与语境（不要复读对方原句；只输出这一条）。`;
     } else {
-      userContent += `请以「${displayName}」的身份回复一条新消息，紧扣当前对话话题与语境（必须是新内容，不要复读上面任何人说过的话；只输出这一条）。`;
+      userContent += `请以「${displayName}」的身份、严格基于该角色人设回复一条新消息，用该角色会用的词和语气，紧扣当前对话话题与语境（必须是新内容，不要复读上面任何人说过的话；只输出这一条）。`;
     }
     if (repeatedPrefix) {
       userContent += `\n\n【必守】上面已有多人用了类似「${repeatedPrefix}...」的句式，你本次回复严禁再使用该开头或句式，必须换完全不同的说法或话题。`;
     }
   } else {
-    userContent = `当前时间：${timeContext}\n\n` + (ragText ? (ragText + '\n\n') : '') + `请用「${displayName}」的口吻发一句贴合当下时间、自然的开场白（只输出这一句）。`;
+    userContent = `当前时间：${timeContext}\n\n` + (ragText ? (ragText + '\n\n') : '') + `请用「${displayName}」的人设口吻发一句贴合当下时间、自然的开场白，必须是该角色会说的话（只输出这一句）。`;
   }
 
   // 接近 deadline 时不拉热点（避免额外等待）

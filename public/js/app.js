@@ -586,15 +586,18 @@
           const hoursStr = (p.activeHours || []).join(', ');
           const samplesCount = (p.sampleMessages || []).length;
           const habits = escapeHtml(p.replyHabits || '');
+          const summary = escapeHtml(p.personaSummary || '');
           return '<div class="admin-persona" data-name="' + escapeHtml(p.name) + '">' +
             '<div class="admin-persona-head">' +
               '<span class="admin-persona-name">' + escapeHtml(p.displayName || p.name) + '</span>' +
               ' <span class="admin-persona-id">' + escapeHtml(p.name) + '</span>' +
             '</div>' +
             '<label>活跃时段（0–23 点，逗号分隔）</label>' +
-            '<input type="text" class="admin-hours" value="' + escapeHtml(hoursStr) + '" placeholder="如 9,10,14,20,21">' +
+            '<input type="text" class="admin-hours" value="' + hoursStr + '" placeholder="如 9,10,14,20,21">' +
             '<label>回复习惯（会喂给 AI，如：喜欢用哈哈哈结尾、爱发表情包）</label>' +
             '<textarea class="admin-habits" rows="2" placeholder="选填，描述该成员说话习惯">' + habits + '</textarea>' +
+            '<label>角色总结（多而详细，可编辑；也可用下方「生成/更新角色总结」一键生成）</label>' +
+            '<textarea class="admin-summary" rows="10" placeholder="性格、说话习惯、常用词、口头禅、语气、常聊话题、对谁常接话等…">' + summary + '</textarea>' +
             '<p class="admin-meta">样本消息 ' + samplesCount + ' 条</p>' +
             '<button type="button" class="admin-save-btn">保存</button>' +
             '</div>';
@@ -605,13 +608,15 @@
             const name = card.getAttribute('data-name');
             const hoursInput = card.querySelector('.admin-hours');
             const habitsInput = card.querySelector('.admin-habits');
+            const summaryInput = card.querySelector('.admin-summary');
             const raw = (hoursInput.value || '').trim();
             const activeHours = raw ? raw.split(/[\s,，]+/).map(function (h) { const n = parseInt(h, 10); return isNaN(n) ? null : n; }).filter(function (n) { return n != null && n >= 0 && n <= 23; }) : [];
             const replyHabits = habitsInput ? (habitsInput.value || '').trim() : '';
+            const personaSummary = summaryInput ? (summaryInput.value || '').trim() : '';
             fetch(API + '/admin/personas', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + window._token },
-              body: JSON.stringify({ name: name, activeHours: activeHours, replyHabits: replyHabits })
+              body: JSON.stringify({ name: name, activeHours: activeHours, replyHabits: replyHabits, personaSummary: personaSummary })
             })
               .then(r => r.json())
               .then(function (res) {
@@ -661,12 +666,33 @@
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.ok) {
-          alert('已重新合并 ' + (data.count || 0) + ' 个人设，样本条数已按全部数据更新。');
+          alert('已重新合并 ' + (data.count || 0) + ' 个人设，样本条数已按全部数据更新。建议再点「生成/更新角色总结」写入详细角色总结。');
           loadAdminPersonas();
         } else alert(data.error || '重新合并失败');
       })
       .catch(function () { alert('请求失败'); })
       .finally(function () { btn.disabled = false; });
+  });
+
+  document.getElementById('admin-rebuild-summaries-btn')?.addEventListener('click', function () {
+    if (!window._token) return;
+    if (!confirm('将为每个有样本的成员生成多而详细的角色总结（每人约 1 次 API 调用），并写入上方「角色总结」框。确定继续？')) return;
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = '生成中…';
+    fetch(API + '/admin/personas/rebuild-summaries', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + window._token }
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.ok) {
+          alert('已更新 ' + (data.updated || 0) + ' 个角色的角色总结，可在上方各卡片中查看与编辑。');
+          loadAdminPersonas();
+        } else alert(data.error || '生成角色总结失败');
+      })
+      .catch(function () { alert('请求失败'); })
+      .finally(function () { btn.disabled = false; btn.textContent = '生成/更新角色总结（多而详细，写入上方各角色卡片）'; });
   });
 
   document.getElementById('admin-ai-paused-btn')?.addEventListener('click', function () {
