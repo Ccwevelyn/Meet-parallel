@@ -22,8 +22,7 @@ function normText(t) {
   return s.slice(0, 2000);
 }
 
-async function buildFromTable(table, source, getPersonaName) {
-  const rows = db.getDb().prepare(`SELECT id, sender, member_id AS memberId, member_name AS memberName, text, time FROM ${table} ORDER BY id`).all();
+async function buildFromRows(rows, source, getPersonaName) {
   let nOk = 0;
   let nSkip = 0;
   const batch = [];
@@ -71,30 +70,25 @@ async function main() {
   console.log('开始构建 persona_vectors（RAG 向量库）...');
 
   // chat_history: sender 就是 persona 英文名（如 Cheng）
-  await buildFromTable(
-    'chat_history',
-    'chat_history',
-    (r) => String(r.sender || '').trim()
-  );
+  {
+    const rows = db.getDb().prepare('SELECT id, sender, text, time FROM chat_history ORDER BY id').all();
+    await buildFromRows(rows, 'chat_history', (r) => String(r.sender || '').trim());
+  }
 
   // collected_chat: sender 就是 persona 英文名（如 Cheng）
-  await buildFromTable(
-    'collected_chat',
-    'collected_chat',
-    (r) => String(r.sender || '').trim()
-  );
+  {
+    const rows = db.getDb().prepare('SELECT id, sender, text, time FROM collected_chat ORDER BY id').all();
+    await buildFromRows(rows, 'collected_chat', (r) => String(r.sender || '').trim());
+  }
 
   if (process.env.INCLUDE_MESSAGES === '1') {
     // messages: member_id 是 member_x，需要映射到英文名
     const { getMemberById } = require('../server/members');
-    await buildFromTable(
-      'messages',
-      'messages',
-      (r) => {
-        const m = getMemberById(String(r.memberId || '').trim());
-        return m && m.name ? m.name : '';
-      }
-    );
+    const rows = db.getDb().prepare('SELECT id, member_id AS memberId, text, time FROM messages ORDER BY id').all();
+    await buildFromRows(rows, 'messages', (r) => {
+      const m = getMemberById(String(r.memberId || '').trim());
+      return m && m.name ? m.name : '';
+    });
   }
 
   console.log('完成。你可以在运行时使用 RAG 检索相似历史片段。');
