@@ -43,9 +43,11 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
   if (!OPENAI_API_KEY) return null;
   const persona = personas[member.name];
   const samplesArr = (persona && Array.isArray(persona.sampleMessages)) ? persona.sampleMessages : [];
-  if (!persona) return null;
+  const hasPersona = !!persona;
+  // 允许在“真人必回”场景下使用通用提示兜底（即便该成员暂无人设）
+  if (!hasPersona && !options.replyToHuman) return null;
   // 允许仅有 personaSummary 的成员参与（样本为空时仍可发言，但会更依赖总结 + RAG）
-  if (samplesArr.length === 0 && !(persona.personaSummary && String(persona.personaSummary).trim())) return null;
+  if (hasPersona && samplesArr.length === 0 && !(persona.personaSummary && String(persona.personaSummary).trim())) return null;
   const displayName = member.displayName || member.name;
   const samples = samplesArr.slice(-30).join('\n');
   const systemParts = [
@@ -59,13 +61,13 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
     '严禁跟风同一句式或梗：若上面已有多条消息用了相同/相似的开头或句式（例如「程哥的午饭能帮我...」），你绝对不能再用该句式，必须换一个完全不同的话题、说法或角度，像真人一样自然换话。',
     '语气：像真人一样自然参与，不必每条都接话、不必一直刷屏，有话想说就说一句，没话就少说。'
   ];
-  if (persona.personaSummary && persona.personaSummary.trim()) {
+  if (hasPersona && persona.personaSummary && persona.personaSummary.trim()) {
     systemParts.push('该角色的性格与说话风格（已从群聊学习）：\n' + persona.personaSummary.trim());
   }
   if (samples) {
     systemParts.push('下面是你平时在群里的真实发言，请严格模仿这种说话方式（用词、语气、长度）：\n' + samples);
   }
-  if (persona.replyHabits && persona.replyHabits.trim()) {
+  if (hasPersona && persona.replyHabits && persona.replyHabits.trim()) {
     systemParts.push('回复习惯（请自然融入）：' + persona.replyHabits.trim());
   }
   const recent = recentMessages
@@ -85,16 +87,21 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
   // RAG：检索该角色相似历史片段（5~10 条），用于更贴合语境和角色差异
   let ragText = '';
   try {
-    const query = (lastMessageText || recentTexts.join(' ')).slice(0, 800);
-    const hits = await retrieveSimilarHistory(member.name, query, { k: options.ragK || 8, candidateLimit: 2500 });
-    if (hits && hits.length) {
-      const lines = hits.map((h, i) => {
-        const t = String(h.text || '').trim().replace(/\s+/g, ' ');
-        const when = h.time ? String(h.time).slice(0, 19).replace('T', ' ') : '';
-        const meta = when ? `（${when}）` : '';
-        return `${i + 1}. ${t}${meta}`;
-      });
-      ragText = '你过去在相似语境下的对话片段（包含上下文；仅供模仿语气与接话方式，不要照抄原句）：\n' + lines.join('\n');
+    // 如果接近 deadline，跳过 RAG（RAG 需要额外的 embedding API 调用，容易拖慢“必回”）
+    const deadlineAtMs = options.deadlineAtMs ? Number(options.deadlineAtMs) : 0;
+    const timeLeft = deadlineAtMs ? (deadlineAtMs - Date.now()) : 999999;
+    if (timeLeft > 2800 && hasPersona) {
+      const query = (lastMessageText || recentTexts.join(' ')).slice(0, 800);
+      const hits = await retrieveSimilarHistory(member.name, query, { k: options.ragK || 8, candidateLimit: 2500 });
+      if (hits && hits.length) {
+        const lines = hits.map((h, i) => {
+          const t = String(h.text || '').trim().replace(/\s+/g, ' ');
+          const when = h.time ? String(h.time).slice(0, 19).replace('T', ' ') : '';
+          const meta = when ? `（${when}）` : '';
+          return `${i + 1}. ${t}${meta}`;
+        });
+        ragText = '你过去在相似语境下的对话片段（包含上下文；仅供模仿语气与接话方式，不要照抄原句）：\n' + lines.join('\n');
+      }
     }
   } catch (_) {}
 
@@ -114,10 +121,17 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
     userContent = `当前时间：${timeContext}\n\n` + (ragText ? (ragText + '\n\n') : '') + `请用「${displayName}」的口吻发一句贴合当下时间、自然的开场白（只输出这一句）。`;
   }
 
-  const trends = await getTrendsContext();
-  if (trends) {
-    userContent += '\n\n以下为可选外部参考（仅在与当前话题或氛围相关时可自然提及，不必强行使用）：\n' + trends;
-  }
+  // 接近 deadline 时不拉热点（避免额外等待）
+  try {
+    const deadlineAtMs = options.deadlineAtMs ? Number(options.deadlineAtMs) : 0;
+    const timeLeft = deadlineAtMs ? (deadlineAtMs - Date.now()) : 999999;
+    if (timeLeft > 2500) {
+      const trends = await getTrendsContext();
+      if (trends) {
+        userContent += '\n\n以下为可选外部参考（仅在与当前话题或氛围相关时可自然提及，不必强行使用）：\n' + trends;
+      }
+    }
+  } catch (_) {}
 
   try {
     const res = await fetch(`${OPENAI_BASE_URL}/chat/completions`, {
@@ -247,14 +261,26 @@ const HUMAN_REPLY_MAX_PERSON_DELAY_MS = 25000;
 function scheduleOneReplySoon(addAIMessage, getRecentMessages, getOccupiedMemberIds) {
   const startTime = Date.now();
   const SAFETY_MARGIN_MS = 250;
+  const deadlineAtMs = startTime + HUMAN_REPLY_DEADLINE_MS;
+
+  function addFallback(memberId, recent) {
+    const last = recent && recent.length ? String(recent[recent.length - 1].text || '').trim() : '';
+    const t = last ? last.slice(0, 60) : '';
+    const text = t ? `收到，我先看下你说的「${t}」这个点，等我回你。` : '收到，我先看下，等我回你。';
+    addAIMessage(memberId, text);
+    return true;
+  }
 
   async function doGenerateAndSend(member, personas) {
     const recent = typeof getRecentMessages === 'function' ? getRecentMessages(24) : [];
-    const text = await generateReply(member, recent, personas, { replyToHuman: true });
+    const text = await generateReply(member, recent, personas, { replyToHuman: true, deadlineAtMs });
     if (text) {
       addAIMessage(member.id, text);
       return true;
     }
+    // 兜底：模型失败时至少回一句（避免“根本不回”）
+    const timeLeft = deadlineAtMs - Date.now();
+    if (timeLeft > 0) return addFallback(member.id, recent);
     return false;
   }
 
@@ -278,13 +304,15 @@ function scheduleOneReplySoon(addAIMessage, getRecentMessages, getOccupiedMember
     const lastMessageText = (lastMsg && lastMsg.text) ? String(lastMsg.text).trim() : '';
     const member = pickMember(members, personas, occupied, { replyToMemberName, lastMessageText, replyToHuman: true });
     if (!member) return false;
-    const persona = personas[member.name];
     const elapsed = Date.now() - startTime;
     const remaining = HUMAN_REPLY_DEADLINE_MS - elapsed - SAFETY_MARGIN_MS;
     if (remaining <= 0) return false;
     // 必回约束：个体慢回只能在 deadline 内体现，不能把“必回”拖到超时
+    const persona = personas[member.name];
     const learnedDelay = (persona && persona.averageReplyDelayMs != null ? persona.averageReplyDelayMs : 0) | 0;
-    const personDelayMs = Math.max(0, Math.min(learnedDelay, HUMAN_REPLY_MAX_PERSON_DELAY_MS, remaining));
+    // 预留至少 4 秒给网络/模型生成，避免“等完才来不及发”
+    const maxDelay = Math.max(0, Math.min(HUMAN_REPLY_MAX_PERSON_DELAY_MS, remaining - 4000));
+    const personDelayMs = Math.max(0, Math.min(learnedDelay, maxDelay));
     if (personDelayMs > 0) {
       return new Promise((resolve) => {
         setTimeout(() => {
