@@ -9,7 +9,8 @@
     "build:secure": "node scripts/build-secure.js",
     "start:secure": "node dist/server/index.js",
     "rag:build": "node scripts/build-persona-vectors.js && node scripts/build-persona-summaries.js",
-    "rag:bootstrap": "node scripts/bootstrap-rag.js"
+    "rag:bootstrap": "node scripts/bootstrap-rag.js",
+    "start:with-bootstrap": "node scripts/bootstrap-rag.js & node server/index.js"
   },
   "engines": {
     "node": ">=18"

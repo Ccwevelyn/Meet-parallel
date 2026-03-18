@@ -121,20 +121,21 @@ npm start
 
 ## 部署：Render 上的一次性初始化（RAG 向量库 + personaSummary）
 
-本项目支持把「构建向量库 + 生成人设总结」做成一个**可重复执行但只会真正跑一次**的启动前引导脚本，适合 Render：
+本项目支持把「构建向量库 + 生成人设总结」做成一个**可重复执行但只会真正跑一次**的启动前引导脚本，适合 Render。
 
-- **命令**：`npm run rag:bootstrap`
-- **行为**：
-  - 若数据库里 `persona_vectors` 已有数据，会直接跳过（避免每次重启都重新生成 embeddings）
-  - 如需强制重建，设置环境变量 **`FORCE_RAG_BOOTSTRAP=1`**
+- **行为**：若数据库里 `persona_vectors` 已有数据，会直接跳过；如需强制重建，设置环境变量 **`FORCE_RAG_BOOTSTRAP=1`**。
 
-### 推荐：Render Start Command
+### 推荐：Render Start Command（避免 Port scan timeout）
 
-把 Render 的 Start Command 设为：
+若用 `npm run rag:bootstrap && npm start`，bootstrap 会先跑完（每人一次 API，耗时长）才启动 Web，Render 在启动阶段检测不到端口会报 **Port scan timeout**。
+
+请改用「先起 Web、后台跑 bootstrap」：
 
 ```bash
-npm run rag:bootstrap && npm start
+npm run start:with-bootstrap
 ```
+
+这样会**先监听端口、再在后台跑** RAG/人设总结，Render 能立刻检测到端口；bootstrap 在后台跑完即可。
 
 ### 相关脚本
 
