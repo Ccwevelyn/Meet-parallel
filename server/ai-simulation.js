@@ -42,9 +42,12 @@ const OPENAI_MODEL = process.env.AI_MODEL || process.env.OPENAI_MODEL || 'gpt-3.
 async function generateWithLLM(member, recentMessages, personas, options = {}) {
   if (!OPENAI_API_KEY) return null;
   const persona = personas[member.name];
-  if (!persona || !persona.sampleMessages || persona.sampleMessages.length === 0) return null;
+  const samplesArr = (persona && Array.isArray(persona.sampleMessages)) ? persona.sampleMessages : [];
+  if (!persona) return null;
+  // 允许仅有 personaSummary 的成员参与（样本为空时仍可发言，但会更依赖总结 + RAG）
+  if (samplesArr.length === 0 && !(persona.personaSummary && String(persona.personaSummary).trim())) return null;
   const displayName = member.displayName || member.name;
-  const samples = persona.sampleMessages.slice(-30).join('\n');
+  const samples = samplesArr.slice(-30).join('\n');
   const systemParts = [
     '你是一个群聊里的成员，正在用「自己的口吻」回复。',
     '规则：只输出一条简短的口语消息（一行），不要加引号、不要解释、不要写「我说：」等前缀。',
@@ -59,7 +62,9 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
   if (persona.personaSummary && persona.personaSummary.trim()) {
     systemParts.push('该角色的性格与说话风格（已从群聊学习）：\n' + persona.personaSummary.trim());
   }
-  systemParts.push('下面是你平时在群里的真实发言，请严格模仿这种说话方式（用词、语气、长度）：\n' + samples);
+  if (samples) {
+    systemParts.push('下面是你平时在群里的真实发言，请严格模仿这种说话方式（用词、语气、长度）：\n' + samples);
+  }
   if (persona.replyHabits && persona.replyHabits.trim()) {
     systemParts.push('回复习惯（请自然融入）：' + persona.replyHabits.trim());
   }
@@ -162,7 +167,10 @@ function pickMember(members, personas, getOccupiedMemberIds, options = {}) {
   let trained = members.filter(m => {
     if (occupied.indexOf(m.id) !== -1) return false;
     const p = personas[m.name];
-    return p && Array.isArray(p.sampleMessages) && p.sampleMessages.length > 0;
+    return p && (
+      (Array.isArray(p.sampleMessages) && p.sampleMessages.length > 0) ||
+      (p.personaSummary && String(p.personaSummary).trim())
+    );
   });
 
   const now = new Date();
@@ -200,6 +208,11 @@ function pickMember(members, personas, getOccupiedMemberIds, options = {}) {
       const mentioned = m.mentionKeywords.some(kw => kw && lastMessageText.includes(kw));
       if (mentioned) w *= 2.2;
     }
+    // 回复真人时倾向选择更快回复的人（但不强制；主要由 deadline 约束兜底）
+    if (options.replyToHuman && p && p.averageReplyDelayMs != null && p.averageReplyDelayMs > 0) {
+      const d = Math.min(60000, Number(p.averageReplyDelayMs) || 0);
+      if (d > 0) w *= Math.max(0.35, 1 - d / 45000);
+    }
     return { member: m, weight: Math.max(0.1, w) };
   });
 
@@ -233,6 +246,7 @@ const HUMAN_REPLY_MAX_PERSON_DELAY_MS = 25000;
  */
 function scheduleOneReplySoon(addAIMessage, getRecentMessages, getOccupiedMemberIds) {
   const startTime = Date.now();
+  const SAFETY_MARGIN_MS = 250;
 
   async function doGenerateAndSend(member, personas) {
     const recent = typeof getRecentMessages === 'function' ? getRecentMessages(24) : [];
@@ -262,13 +276,15 @@ function scheduleOneReplySoon(addAIMessage, getRecentMessages, getOccupiedMember
     } catch (_) {}
     const occupied = typeof getOccupiedMemberIds === 'function' ? getOccupiedMemberIds() : [];
     const lastMessageText = (lastMsg && lastMsg.text) ? String(lastMsg.text).trim() : '';
-    const member = pickMember(members, personas, occupied, { replyToMemberName, lastMessageText });
+    const member = pickMember(members, personas, occupied, { replyToMemberName, lastMessageText, replyToHuman: true });
     if (!member) return false;
     const persona = personas[member.name];
-    const personDelayMs = Math.min(
-      (persona && persona.averageReplyDelayMs != null ? persona.averageReplyDelayMs : 0) | 0,
-      HUMAN_REPLY_MAX_PERSON_DELAY_MS
-    );
+    const elapsed = Date.now() - startTime;
+    const remaining = HUMAN_REPLY_DEADLINE_MS - elapsed - SAFETY_MARGIN_MS;
+    if (remaining <= 0) return false;
+    // 必回约束：个体慢回只能在 deadline 内体现，不能把“必回”拖到超时
+    const learnedDelay = (persona && persona.averageReplyDelayMs != null ? persona.averageReplyDelayMs : 0) | 0;
+    const personDelayMs = Math.max(0, Math.min(learnedDelay, HUMAN_REPLY_MAX_PERSON_DELAY_MS, remaining));
     if (personDelayMs > 0) {
       return new Promise((resolve) => {
         setTimeout(() => {
