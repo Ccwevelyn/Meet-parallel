@@ -1,6 +1,7 @@
 const { getAllMembers } = require('./members');
 const { loadPersonas } = require('./personas');
 const { getTrendsContext } = require('./serper');
+const { retrieveSimilarHistory } = require('./rag');
 
 /** 管理员一键暂停：为 true 时所有 AI 不发言（自发 + 回复真人），再次关闭后恢复 */
 let _aiPaused = false;
@@ -67,14 +68,34 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
     .join('\n');
   const recentTexts = (recentMessages.slice(-6) || []).map(m => (m.text || '').trim()).filter(Boolean);
   const repeatedPrefix = getRepeatedPrefix(recentTexts);
+  const lastMessageText = (recentMessages && recentMessages.length)
+    ? String(recentMessages[recentMessages.length - 1].text || '').trim()
+    : '';
 
   const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
   const now = new Date();
   const timeContext = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${weekdays[now.getDay()]} ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
 
+  // RAG：检索该角色相似历史片段（5~10 条），用于更贴合语境和角色差异
+  let ragText = '';
+  try {
+    const query = (lastMessageText || recentTexts.join(' ')).slice(0, 500);
+    const hits = await retrieveSimilarHistory(member.name, query, { k: options.ragK || 8 });
+    if (hits && hits.length) {
+      const lines = hits.map((h, i) => {
+        const t = String(h.text || '').trim().replace(/\s+/g, ' ');
+        const when = h.time ? String(h.time).slice(0, 19).replace('T', ' ') : '';
+        const meta = when ? `（${when}）` : '';
+        return `${i + 1}. ${t}${meta}`;
+      });
+      ragText = '你过去的相似发言/对话片段（仅供模仿语气与思路，不要照抄原句）：\n' + lines.join('\n');
+    }
+  } catch (_) {}
+
   let userContent;
   if (recent) {
     userContent = `当前时间：${timeContext}\n\n最近群聊：\n${recent}\n\n`;
+    if (ragText) userContent += ragText + '\n\n';
     if (options.replyToHuman) {
       userContent += `上一条是真人（群友）发的，请以「${displayName}」的身份对其做出回应或接话，贴合当前话题与语境，自然参与对话（不要复读对方原句；只输出这一条）。`;
     } else {
@@ -84,7 +105,7 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
       userContent += `\n\n【必守】上面已有多人用了类似「${repeatedPrefix}...」的句式，你本次回复严禁再使用该开头或句式，必须换完全不同的说法或话题。`;
     }
   } else {
-    userContent = `当前时间：${timeContext}\n\n请用「${displayName}」的口吻发一句贴合当下时间、自然的开场白（只输出这一句）。`;
+    userContent = `当前时间：${timeContext}\n\n` + (ragText ? (ragText + '\n\n') : '') + `请用「${displayName}」的口吻发一句贴合当下时间、自然的开场白（只输出这一句）。`;
   }
 
   const trends = await getTrendsContext();

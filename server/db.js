@@ -50,6 +50,19 @@ function getDb() {
   try { d.exec('ALTER TABLE personas ADD COLUMN average_reply_delay_ms REAL'); } catch (_) {}
   try { d.exec('ALTER TABLE personas ADD COLUMN message_share REAL'); } catch (_) {}
   d.exec(`
+    CREATE TABLE IF NOT EXISTS persona_vectors (
+      persona_name TEXT NOT NULL,
+      source TEXT NOT NULL,           -- chat_history | messages | collected_chat
+      source_id INTEGER NOT NULL,     -- 对应源表的 id
+      text TEXT NOT NULL,
+      time TEXT,
+      embedding TEXT NOT NULL,        -- JSON 数组
+      updated_at TEXT,
+      PRIMARY KEY (persona_name, source, source_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_persona_vectors_persona ON persona_vectors(persona_name);
+    CREATE INDEX IF NOT EXISTS idx_persona_vectors_updated ON persona_vectors(updated_at);
+
     CREATE TABLE IF NOT EXISTS chat_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       sender TEXT NOT NULL,
@@ -173,6 +186,46 @@ function messagesQuery(options = {}) {
 function messagesClearAll() {
   const info = getDb().prepare('DELETE FROM messages').run();
   return info.changes;
+}
+
+// ---------- persona_vectors (RAG 向量库，按 persona_name 逻辑分区) ----------
+function personaVectorsUpsertMany(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return 0;
+  const stmt = getDb().prepare(
+    'INSERT OR REPLACE INTO persona_vectors (persona_name, source, source_id, text, time, embedding, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  );
+  const run = getDb().transaction(() => {
+    for (const r of rows) {
+      if (!r || !r.personaName || !r.source || r.sourceId == null || !r.text || !r.embedding) continue;
+      stmt.run(
+        String(r.personaName),
+        String(r.source),
+        Number(r.sourceId),
+        String(r.text).slice(0, 2000),
+        r.time || null,
+        typeof r.embedding === 'string' ? r.embedding : JSON.stringify(r.embedding),
+        r.updatedAt || new Date().toISOString()
+      );
+    }
+  });
+  run();
+  return rows.length;
+}
+
+function personaVectorsLoadByPersona(personaName, limit = 2000) {
+  const name = String(personaName || '').trim();
+  if (!name) return [];
+  const lim = Math.max(1, Math.min(5000, Number(limit) || 2000));
+  return getDb().prepare(
+    'SELECT persona_name AS personaName, source, source_id AS sourceId, text, time, embedding FROM persona_vectors WHERE persona_name = ? ORDER BY source_id DESC LIMIT ?'
+  ).all(name, lim);
+}
+
+function personaVectorsCount(personaName) {
+  const name = String(personaName || '').trim();
+  if (!name) return 0;
+  const row = getDb().prepare('SELECT COUNT(*) AS n FROM persona_vectors WHERE persona_name = ?').get(name);
+  return row ? (row.n || 0) : 0;
 }
 
 // ---------- personas ----------
@@ -314,6 +367,9 @@ module.exports = {
   messagesGetDates,
   messagesQuery,
   messagesClearAll,
+  personaVectorsUpsertMany,
+  personaVectorsLoadByPersona,
+  personaVectorsCount,
   personasLoadAll,
   personasSaveAll,
   personasSaveOne,

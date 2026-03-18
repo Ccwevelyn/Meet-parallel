@@ -7,7 +7,9 @@
     "start": "node server/index.js",
     "dev": "node server/index.js",
     "build:secure": "node scripts/build-secure.js",
-    "start:secure": "node dist/server/index.js"
+    "start:secure": "node dist/server/index.js",
+    "rag:build": "node scripts/build-persona-vectors.js && node scripts/build-persona-summaries.js",
+    "rag:bootstrap": "node scripts/bootstrap-rag.js"
   },
   "engines": {
     "node": ">=18"

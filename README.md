@@ -119,6 +119,31 @@ npm start
 
 ---
 
+## 部署：Render 上的一次性初始化（RAG 向量库 + personaSummary）
+
+本项目支持把「构建向量库 + 生成人设总结」做成一个**可重复执行但只会真正跑一次**的启动前引导脚本，适合 Render：
+
+- **命令**：`npm run rag:bootstrap`
+- **行为**：
+  - 若数据库里 `persona_vectors` 已有数据，会直接跳过（避免每次重启都重新生成 embeddings）
+  - 如需强制重建，设置环境变量 **`FORCE_RAG_BOOTSTRAP=1`**
+
+### 推荐：Render Start Command
+
+把 Render 的 Start Command 设为：
+
+```bash
+npm run rag:bootstrap && npm start
+```
+
+### 相关脚本
+
+- `scripts/build-persona-vectors.js`：从 `chat_history`/`collected_chat`（可选含 `messages`）构建 RAG 向量库
+- `scripts/build-persona-summaries.js`：为每个成员生成 `personaSummary`
+- `scripts/bootstrap-rag.js`：一次性引导（检测已建则跳过）
+
+---
+
 ## 部署到 Render
 
 **若希望部署后人设、聊天记录、密码等持久保留（重启/重新部署也不丢），必须按下面「数据持久化」配置 Disk + `DATA_DIR`，否则数据会在每次重启或重新部署时清空。**
