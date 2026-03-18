@@ -22,14 +22,33 @@ function normText(t) {
   return s.slice(0, 2000);
 }
 
+function buildDialogueDoc(rows, i, personaName, windowBefore = 2) {
+  const cur = rows[i];
+  if (!cur) return '';
+  const parts = [];
+  const start = Math.max(0, i - windowBefore);
+  for (let j = start; j < i; j++) {
+    const r = rows[j];
+    const sender = String(r.sender || '').trim();
+    const text = normText(r.text);
+    if (!sender || !text) continue;
+    parts.push(`${sender}: ${text}`);
+  }
+  const selfText = normText(cur.text);
+  if (!selfText) return '';
+  parts.push(`${personaName}: ${selfText}`);
+  return parts.join('\n').slice(0, 2000);
+}
+
 async function buildFromRows(rows, source, getPersonaName) {
   let nOk = 0;
   let nSkip = 0;
   const batch = [];
 
-  for (const r of rows) {
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
     const personaName = getPersonaName(r);
-    const text = normText(r.text);
+    const text = buildDialogueDoc(rows, i, personaName, 2) || normText(r.text);
     if (!personaName || !text || text.length < 2) {
       nSkip++;
       continue;
@@ -84,11 +103,12 @@ async function main() {
   if (process.env.INCLUDE_MESSAGES === '1') {
     // messages: member_id 是 member_x，需要映射到英文名
     const { getMemberById } = require('../server/members');
-    const rows = db.getDb().prepare('SELECT id, member_id AS memberId, text, time FROM messages ORDER BY id').all();
-    await buildFromRows(rows, 'messages', (r) => {
+    const raw = db.getDb().prepare('SELECT id, member_id AS memberId, text, time FROM messages ORDER BY id').all();
+    const rows = raw.map(r => {
       const m = getMemberById(String(r.memberId || '').trim());
-      return m && m.name ? m.name : '';
+      return { id: r.id, sender: (m && m.name) ? m.name : '', text: r.text, time: r.time };
     });
+    await buildFromRows(rows, 'messages', (r) => String(r.sender || '').trim());
   }
 
   console.log('完成。你可以在运行时使用 RAG 检索相似历史片段。');

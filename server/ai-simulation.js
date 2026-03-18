@@ -51,6 +51,7 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
     `身份：你在群里的称呼是「${displayName}」（英文名 ${member.name}）。必须用这个人独有的语气和用词来回复。`,
     '语境与话题：回复必须贴合当前对话的语境和正在讨论的话题，不要突然扯到毫不相关的事情。注意当前日期、星期、时间、季节等，可自然提及与当下相关的内容（如周末、节日、天气、饭点等）。',
     '外部信息：可以适当引用外部资源（热点、新闻、趣闻、冷知识等）参与讨论，但仅在与当前话题或氛围相符时自然带入，不要生硬插入或强行换题。',
+    '衔接性：你的回复必须与「最近群聊的最后一条消息」形成明确的衔接（回应/追问/补充/反驳/共鸣均可）。至少抓住对方话里的 1 个信息点（名词/事件/情绪/观点/数字/时间等）来展开；如果信息不足，就用你的人设语气问一句澄清。',
     '重要：不要复读、照搬或改写前面别人刚说过的话。你要基于自己的性格说出新的、符合你人设的内容，可以接话、吐槽、提问、发表看法，但不要重复他人原句。',
     '严禁跟风同一句式或梗：若上面已有多条消息用了相同/相似的开头或句式（例如「程哥的午饭能帮我...」），你绝对不能再用该句式，必须换一个完全不同的话题、说法或角度，像真人一样自然换话。',
     '语气：像真人一样自然参与，不必每条都接话、不必一直刷屏，有话想说就说一句，没话就少说。'
@@ -79,8 +80,8 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
   // RAG：检索该角色相似历史片段（5~10 条），用于更贴合语境和角色差异
   let ragText = '';
   try {
-    const query = (lastMessageText || recentTexts.join(' ')).slice(0, 500);
-    const hits = await retrieveSimilarHistory(member.name, query, { k: options.ragK || 8 });
+    const query = (lastMessageText || recentTexts.join(' ')).slice(0, 800);
+    const hits = await retrieveSimilarHistory(member.name, query, { k: options.ragK || 8, candidateLimit: 2500 });
     if (hits && hits.length) {
       const lines = hits.map((h, i) => {
         const t = String(h.text || '').trim().replace(/\s+/g, ' ');
@@ -88,7 +89,7 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
         const meta = when ? `（${when}）` : '';
         return `${i + 1}. ${t}${meta}`;
       });
-      ragText = '你过去的相似发言/对话片段（仅供模仿语气与思路，不要照抄原句）：\n' + lines.join('\n');
+      ragText = '你过去在相似语境下的对话片段（包含上下文；仅供模仿语气与接话方式，不要照抄原句）：\n' + lines.join('\n');
     }
   } catch (_) {}
 
@@ -127,7 +128,9 @@ async function generateWithLLM(member, recentMessages, personas, options = {}) {
           { role: 'user', content: userContent }
         ],
         max_tokens: 120,
-        temperature: 0.85
+        temperature: 0.7,
+        presence_penalty: 0.15,
+        frequency_penalty: 0.2
       })
     });
     if (!res.ok) {
