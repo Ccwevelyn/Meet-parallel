@@ -15,7 +15,7 @@ const DEFAULT_CSV = path.join(PROJECT_ROOT, 'CS小分队_聊群记录.csv');
 const dataPath = require(path.join(PROJECT_ROOT, 'server', 'data-path.js'));
 const db = require(path.join(PROJECT_ROOT, 'server', 'db.js'));
 const personas = require(path.join(PROJECT_ROOT, 'server', 'personas.js'));
-const { getAllMembers } = require(path.join(PROJECT_ROOT, 'server', 'members.js'));
+const { getAllMembers, normalizeSenderToMemberName } = require(path.join(PROJECT_ROOT, 'server', 'members.js'));
 
 const SAMPLE_SIZE = 0; // 0 = 取该成员全部消息作为语气样本
 const REPLY_WINDOW_MS = 2 * 60 * 1000; // 2 分钟内接上一条他人消息视为「回复」
@@ -125,6 +125,11 @@ function main() {
   console.log('读取 CSV:', csvPath);
   console.log('开始学习人设：解析消息 → 统计活跃时段与回复习惯 → 写入人设');
   const messages = parseCSV(csvPath);
+  const memberNames = new Set(getAllMembers().map(m => m.name));
+  for (const m of messages) {
+    const canon = normalizeSenderToMemberName(m.sender) || (memberNames.has(String(m.sender || '').trim()) ? String(m.sender).trim() : null);
+    if (canon) m.sender = canon;
+  }
   console.log('解析到消息数:', messages.length);
   if (!messages.length) {
     console.error('没有有效消息，请检查 CSV 格式（成员,时间,内容）');
@@ -136,7 +141,6 @@ function main() {
   const replyDelays = personas.computeReplyDelays(messages);
   const messageShares = personas.computeMessageShares(messages);
   const built = personas.buildPersonas(messages, { sampleSize: SAMPLE_SIZE });
-  const memberNames = new Set(getAllMembers().map(m => m.name));
 
   for (const [name, p] of Object.entries(built)) {
     p.replyHabits = (p.replyHabits && p.replyHabits.trim()) || replyHabitsSummary(replyRates[name] || 0);

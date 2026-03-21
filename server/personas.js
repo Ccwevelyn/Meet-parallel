@@ -1,4 +1,4 @@
-const { getMemberById } = require('./members');
+const { getMemberById, getAllMembers, normalizeSenderToMemberName } = require('./members');
 const db = require('./db');
 
 const REPLY_WINDOW_MS = 2 * 60 * 1000;
@@ -168,18 +168,32 @@ function loadCollectedChat() {
   return db.collectedChatLoad();
 }
 
+/** 人设学习用：只保留 roster 内成员，sender 统一为英文名（与导入 CSV、用户输入对齐） */
+function filterAndNormalizeLearningMessages(list) {
+  const allowed = new Set(getAllMembers().map(m => m.name));
+  const out = [];
+  for (const m of list) {
+    const canon = normalizeSenderToMemberName(m.sender || '') || (allowed.has(String(m.sender || '').trim()) ? String(m.sender).trim() : null);
+    if (!canon || !allowed.has(canon)) continue;
+    out.push({ sender: canon, text: m.text, time: m.time });
+  }
+  return out;
+}
+
 function appendCollectedMessage(entry) {
   db.collectedChatAppend(entry);
 }
 
 /**
  * 合并「导入的聊天记录」+「采集对话」+「群聊里真人发言」为人设；
- * 会重新计算样本、活跃时段、回复率与谁常回复谁，并保留已有的人设总结（personaSummary）
+ * 仅使用：① 原始导入（chat_history，如 CSV）② 用户自主输入（采集语气里用户打的字、群聊里真人登录后发的话，均写入 collected_chat）。
+ * 不包含 AI 在群聊里代发的内容（messages 表里 is_human=0 从不写入此处）。
+ * sender 会规范为成员英文名，无法识别为 roster 内成员的条目丢弃，避免杂名污染样本。
  */
 function mergeCollectedIntoPersonas(options = {}) {
   const history = loadChatHistory();
   const collected = loadCollectedChat();
-  const merged = history.concat(collected);
+  const merged = filterAndNormalizeLearningMessages(history.concat(collected));
   const built = buildPersonas(merged, { sampleSize: options.sampleSize ?? 0 });
   const rates = computeReplyRates(merged);
   const toWhom = computeReplyToWhom(merged);
@@ -203,6 +217,7 @@ function mergeCollectedIntoPersonas(options = {}) {
   return Object.keys(result).length;
 }
 
+/** 仅真人登录后在群聊发送时调用；写入 collected_chat 并追加 sampleMessages。AI 代发言不会走此函数。 */
 function appendChatMessageToPersona(memberId, text, time) {
   if (!memberId || memberId === 'admin' || !text || typeof text !== 'string') return;
   const member = getMemberById(memberId);
@@ -262,6 +277,7 @@ module.exports = {
   appendCollectedMessage,
   appendChatMessageToPersona,
   mergeCollectedIntoPersonas,
+  filterAndNormalizeLearningMessages,
   computeReplyDelays,
   computeMessageShares,
   chatHistorySave: db.chatHistorySave

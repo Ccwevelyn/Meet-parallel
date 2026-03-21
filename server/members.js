@@ -40,4 +40,21 @@ function getAllMembers() {
   return MEMBERS;
 }
 
-module.exports = { getMemberById, getMemberByName, getMemberByIdOrName, getDisplayName, getAllMembers };
+/**
+ * 将 CSV/聊天记录里的「成员」列（英文名或群昵称）统一为成员英文名；无法识别则返回 null。
+ * 用于人设合并：只学习真实成员，且与导入数据、用户输入对齐，不把陌生 sender 混进样本。
+ */
+function normalizeSenderToMemberName(sender) {
+  if (!sender || typeof sender !== 'string') return null;
+  const m = getMemberByName(sender.trim());
+  return m && m.name ? m.name : null;
+}
+
+module.exports = {
+  getMemberById,
+  getMemberByName,
+  getMemberByIdOrName,
+  getDisplayName,
+  getAllMembers,
+  normalizeSenderToMemberName
+};

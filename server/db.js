@@ -155,6 +155,14 @@ function messagesGetRecent(limit = 20) {
   return rows.reverse().map(r => ({ ...r, isHuman: !!r.isHuman }));
 }
 
+/** 仅真人发言（is_human=1），用于 RAG 等：不把 AI 代发言量混入「学人设」语料 */
+function messagesGetHumanOnlyOrdered() {
+  const rows = getDb().prepare(
+    'SELECT id, member_id AS memberId, text, time FROM messages WHERE is_human = 1 ORDER BY id'
+  ).all();
+  return rows;
+}
+
 function messagesGetDates() {
   const rows = getDb().prepare(
     "SELECT DISTINCT substr(time, 1, 10) AS d FROM messages WHERE time IS NOT NULL AND time != '' AND length(time) >= 10 ORDER BY d DESC"
@@ -364,6 +372,7 @@ module.exports = {
   messagesGetAll,
   messagesAdd,
   messagesGetRecent,
+  messagesGetHumanOnlyOrdered,
   messagesGetDates,
   messagesQuery,
   messagesClearAll,

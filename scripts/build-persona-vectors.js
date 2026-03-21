@@ -5,13 +5,21 @@
  * 1) 配置 AI_API_KEY（同 OPENAI_API_KEY 兼容）与可选 AI_BASE_URL
  * 2) node scripts/build-persona-vectors.js
  *
- * 默认从 chat_history + collected_chat 两个表导入（更贴近“真实群聊语料”）。
- * 如需也把实时 messages 纳入，可设置 INCLUDE_MESSAGES=1
+ * 默认从 chat_history + collected_chat 两个表导入（原始导入 + 用户自主输入，不含 AI 代发言）。
+ * 如需也把「群聊里真人消息」纳入，可设置 INCLUDE_MESSAGES=1（仅 is_human=1，不含 AI）。
  */
 require('dotenv').config();
 
 const db = require('../server/db');
 const { embedText } = require('../server/rag');
+const { filterAndNormalizeLearningMessages } = require('../server/personas');
+
+function rowsWithNormalizedSenders(rawRows) {
+  return rawRows.flatMap((r) => {
+    const n = filterAndNormalizeLearningMessages([{ sender: r.sender, text: r.text, time: r.time }]);
+    return n.length ? [{ id: r.id, sender: n[0].sender, text: n[0].text, time: n[0].time }] : [];
+  });
+}
 
 function sleep(ms) {
   return new Promise(r => setTimeout(r, ms));
@@ -88,26 +96,27 @@ async function main() {
 
   console.log('开始构建 persona_vectors（RAG 向量库）...');
 
-  // chat_history: sender 就是 persona 英文名（如 Cheng）
+  // chat_history：导入的原始聊天记录（sender 规范为成员英文名）
   {
-    const rows = db.getDb().prepare('SELECT id, sender, text, time FROM chat_history ORDER BY id').all();
+    const raw = db.getDb().prepare('SELECT id, sender, text, time FROM chat_history ORDER BY id').all();
+    const rows = rowsWithNormalizedSenders(raw);
     await buildFromRows(rows, 'chat_history', (r) => String(r.sender || '').trim());
   }
 
-  // collected_chat: sender 就是 persona 英文名（如 Cheng）
+  // collected_chat：采集语气 + 群聊真人发言（不含 AI）
   {
-    const rows = db.getDb().prepare('SELECT id, sender, text, time FROM collected_chat ORDER BY id').all();
+    const raw = db.getDb().prepare('SELECT id, sender, text, time FROM collected_chat ORDER BY id').all();
+    const rows = rowsWithNormalizedSenders(raw);
     await buildFromRows(rows, 'collected_chat', (r) => String(r.sender || '').trim());
   }
 
   if (process.env.INCLUDE_MESSAGES === '1') {
-    // messages: member_id 是 member_x，需要映射到英文名
     const { getMemberById } = require('../server/members');
-    const raw = db.getDb().prepare('SELECT id, member_id AS memberId, text, time FROM messages ORDER BY id').all();
-    const rows = raw.map(r => {
+    const raw = db.messagesGetHumanOnlyOrdered();
+    const rows = raw.map((r) => {
       const m = getMemberById(String(r.memberId || '').trim());
       return { id: r.id, sender: (m && m.name) ? m.name : '', text: r.text, time: r.time };
-    });
+    }).filter((r) => r.sender);
     await buildFromRows(rows, 'messages', (r) => String(r.sender || '').trim());
   }
 
